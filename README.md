@@ -11,6 +11,10 @@ This custom build adds the following:
 
 See below for more details.
 
+Video Demo:
+[![Watch the demo](https://img.youtube.com/vi/i1qpVoLzg5g/maxresdefault.jpg)](https://www.youtube.com/watch?v=i1qpVoLzg5g)
+
+
 ## Freehand Vectors
 * Create a **freehand vector layer** to start using it. Works with freehand brushes and vector line/shape tools. 
 * Use **Select Shapes** for whole stroke edits and **Edit Shapes** for point-by-point edits.
@@ -21,11 +25,16 @@ See below for more details.
 	* Trim is like CSP's vector eraser. You can erase whole strokes, only to crossings. or specific areas only.
 		* Keep Caps preserves round caps, and won't be noticeable unless you use a polyline vector tool. Keep Fills likewise only works on polyline vector shapes (freehand brush strokes do not have a fill).
 	* Smooth, Simplify, and Subdivide smooths points, simplifies strokes by removing/merging points, or adds points, respectively.
-* **IMPORTANT!!!** If you save the file you worked on with the custom build with stock Krita, the freehand vector format will be **DESTROYED**. The file can still be opened and edited, but the vectors will be flattened into stock vectors and will not work with the freehand vector tools.
+
+![Vector Edit Tool Options](<readme-files/Pasted image 20261115172652.png>)
+
+**IMPORTANT!!!** If you save the file you worked on with the custom build with stock Krita, the freehand vector format will be **DESTROYED**. The file can still be opened and edited, but the vectors will be flattened into stock vectors and will not work with the freehand vector tools.
+
 * Limitations:
 	* Only works with pixel and CSP brush engines.
 	* Color mixing does not work on vector layers.
 	* Does not support fills (stroke and fill will be the same color) or gradients. Caps also won't really show up visually. 
+
 
 ## CSP Paintop (including Ribbon Function)
 * A CSP-like paint engine. Expect some rough edges; do NOT expect a 1:1 replication of CSP brush behaviors.
@@ -38,7 +47,9 @@ See below for more details.
 	* Color Jitter, Spraying Effect, Texture
 	* Watercolor Edge
 * You can use the python converter plugin (sut2kpp) to import sut brushes. Note that the converter was based on sut brushes exported from CSP v3. 
-* **Only convert brushes you own or have permission to use.** Converting a brush does not change its license. Brushes made by other people stay under their creators' terms, and sharing converted copies may violate those terms. You are responsible for following the license of any brush you convert. 
+* **Only convert brushes you own or have permission to use.** Converting a brush does not change its license. Brushes made by other people stay under their creators' terms, and sharing converted copies may violate those terms. You are responsible for following the license of any brush you convert.
+
+<img src="readme-files/brush_demo.png" width="48%">
 
 ## UI/UX changes
 * Setting to toggle snap to brush increment sizes without holding ctrl
@@ -46,9 +57,13 @@ See below for more details.
 * Undo after one liquify dab doesn't undo size changes to liquify falloff. Liquify is also a little bit faster.
 * Shape select can use ellipse, lasso, and polygon selection besides rectangle. You can also toggle to select shapes it touches (instead of encompasses).
 
+<img src="readme-files/Pasted image 20261116163507.png" width="55%"> <img src="readme-files/Pasted image 20261116163604.png" width="42%">
+<img src="readme-files/shapes_panel.png" width="48%">
+
+
 ## Using with Stock Krita
 
-comicKrita keeps its own settings file (`comickritarc`), its own shortcuts file and its own data folder (`comicKrita/krita` under the user's application data), and on Android its own package id. It can be installed and run beside an official Krita. The display settings file (`kritadisplayrc`) and the log files are still shared with Krita.
+ComicKrita keeps its own settings file (`comickritarc`), its own shortcuts file and its own data folder (`comicKrita/krita` under the user's application data), and on Android its own package id. It can be installed and run beside an official Krita. The display settings file (`kritadisplayrc`) and the log files are still shared with Krita.
 
 ## Future planned features
 * More UI/UX tweaks (e.g. temporary shortcut key, auto switch from transform to brush tool)
@@ -58,7 +73,7 @@ comicKrita keeps its own settings file (`comickritarc`), its own shortcuts file 
 
 ## Building
 
-comicKrita builds exactly like the Krita version it is based on; follow [Krita's build instructions](https://docs.krita.org/en/untranslatable_pages/building_krita.html). Its branding (`-DBRANDING=Comic`) is the default.
+ComicKrita builds exactly like the Krita version it is based on; follow [Krita's build instructions](https://docs.krita.org/en/untranslatable_pages/building_krita.html). Its branding (`-DBRANDING=Comic`) is the default.
 
 ## Acknowledgements
 Inspired by the approaches used in the following:
