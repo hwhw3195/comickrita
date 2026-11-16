@@ -5,6 +5,7 @@
  */
 
 #include "KisPasteActionFactories.h"
+#include "KisShapeLayerHooks.h"
 
 #include "kis_config.h"
 #include "kis_image.h"
@@ -120,11 +121,11 @@ bool tryPasteShapes(KisPasteActionFactory::Flags flags, KisViewManager *view)
             KUndo2Command *parentCommand = new KUndo2Command(kundo2_i18n("Paste shapes"));
 
             const bool forceCreateNewLayer = flags.testFlag(KisPasteActionFactory::ForceNewLayer);
-            KoShapeContainer *parentLayer = nullptr;
 
-            if (forceCreateNewLayer) {
-                parentLayer = canvas->shapeController()->documentBase()->createParentForShapes(shapes, true, parentCommand);
-            }
+            // the layer first, as addShapesDirect() would find it, so a plugin can replace the shapes for it
+            KoShapeContainer *parentLayer =
+                canvas->shapeController()->documentBase()->createParentForShapes(shapes, forceCreateNewLayer, parentCommand);
+            KisShapeLayerHooks::convertShapes(shapes, parentLayer);
 
             canvas->shapeController()->addShapesDirect(shapes, parentLayer, parentCommand);
 

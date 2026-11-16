@@ -65,6 +65,10 @@
 #include "kis_figure_painting_tool_helper.h"
 #include "kis_update_outline_job.h"
 
+#include <kis_tool_utils.h>
+#include <kis_shape_layer.h>
+#include <KisShapeLayerHooks.h>
+
 namespace ActionHelper {
 
     void trimDevice(KisViewManager *view,
@@ -347,12 +351,22 @@ void KisCutCopyActionFactory::run(Flags flags, KisViewManager *view)
         KisNodeList nodes;
         Q_FOREACH (KisNodeSP node, selectedNodes) {
             KisNodeSP dupNode;
-            if (node->inherits("KisShapeLayer") || node->inherits("KisFileLayer")) {
+            // a plugin may keep a vector layer as vectors, cut down to the selection
+            KisNodeSP vectorCopy = node->inherits("KisShapeLayer") ? node->clone() : KisNodeSP();
+            if (vectorCopy && KisShapeLayerHooks::keepWithinSelection(dynamic_cast<KisShapeLayer*>(vectorCopy.data()), selection)) {
+                dupNode = vectorCopy;
+            } else if (node->inherits("KisShapeLayer") || node->inherits("KisFileLayer")) {
                 KisPaintDeviceSP dev = new KisPaintDevice(*node->projection());
                 // might have to change node's name (vector to paint layer)
                 dupNode = new KisPaintLayer(image, node->name(), node->opacity(), dev);
             } else {
                 dupNode = node->clone();
+                // the vector layers in a group stay vector layers, so they need cutting down too
+                KisLayerUtils::recursiveApplyNodes(dupNode, [selection] (KisNodeSP child) {
+                    if (KisShapeLayer *copy = dynamic_cast<KisShapeLayer*>(child.data())) {
+                        KisShapeLayerHooks::keepWithinSelection(copy, selection);
+                    }
+                });
             }
             nodes.append(dupNode);
         }
@@ -390,6 +404,15 @@ void KisCutCopyActionFactory::run(Flags flags, KisViewManager *view)
             selectedNodes.append(masks);
             Q_FOREACH (KisNodeSP node, selectedNodes) {
                 KisLayerUtils::recursiveApplyNodes(node, [selection, masks, ap] (KisNodeSP node){
+
+                    // a plugin may cut a vector layer's shapes at the selection's edge
+                    if (KisShapeLayer *shapeLayer = dynamic_cast<KisShapeLayer*>(node.data())) {
+                        KUndo2Command *cmd = node->isEditable() ? KisShapeLayerHooks::cutWithinSelection(shapeLayer, selection) : nullptr;
+                        if (cmd) {
+                            ap->applyCommand(cmd, KisStrokeJobData::SEQUENTIAL, KisStrokeJobData::EXCLUSIVE);
+                        }
+                        return;
+                    }
 
                     if (!node->hasEditablePaintDevice()) {
                         return;

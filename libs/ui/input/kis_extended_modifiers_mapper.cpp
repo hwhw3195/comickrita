@@ -94,8 +94,10 @@ void KisExtendedModifiersMapper::setLocalMonitor(bool activate, KisShortcutMatch
 KisExtendedModifiersMapper::ExtendedModifiers
 KisExtendedModifiersMapper::queryExtendedModifiers()
 {
+    // tests run with a plain QApplication, which has no platform plugin
+    KisApplication *kisApp = qobject_cast<KisApplication*>(qApp);
     KisExtendedModifiersMapperPluginInterface *plugin =
-        static_cast<KisApplication*>(qApp)->extendedModifiersPluginInterface();
+        kisApp ? kisApp->extendedModifiersPluginInterface() : nullptr;
 
     if (plugin) {
         return plugin->queryExtendedModifiers();

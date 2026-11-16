@@ -46,6 +46,7 @@ public Q_SLOTS:
     void slotWarpTypeChanged(int index);
     void slotRotationCenterChanged(int index);
     void slotTransformAroundRotationCenter(bool value);
+    void slotScaleBrushSizes(bool value);
 
     void slotSetScaleX(int value);
     void slotSetScaleY(int value);
@@ -100,6 +101,7 @@ public Q_SLOTS:
     void liquifySizePressureChanged(bool value);
     void liquifyAmountPressureChanged(bool value);
     void liquifyReverseDirectionChanged(bool value);
+    void slotLiquifyShowReachChanged(bool value);
 
     void slotLiquifyModeChanged(int value);
 
@@ -130,6 +132,12 @@ private:
 
     void updateLiquifyControls();
 
+    /// the preview mode the config chooses, as an index of cmbPreviewMode
+    static int previewIndexFromConfig();
+    /// with \p liquifyTargets, offers Accurate and Fast only, and shows
+    /// Accurate with Instant Preview as Accurate
+    void updatePreviewModes(bool fullResolution, bool liquifyTargets);
+
     void resetUIOptions();
 
 private:
@@ -143,6 +151,8 @@ private:
     int m_uiSlotsBlocked;
     double m_scaleRatio;
     bool m_configChanged;
+    /// the layers preview at full resolution only, so Accurate with Instant Preview is off
+    bool m_fullResolution {false};
 };
 
 #endif /* __KIS_TOOL_TRANSFORM_CONFIG_WIDGET_H */

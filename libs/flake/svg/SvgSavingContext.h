@@ -56,6 +56,13 @@ public:
     void setStrippedTextMode(bool value);
     bool strippedTextMode() const;
 
+    /**
+     * For shapes that share a definition in the defs section: returns true
+     * the first time it is called with \p id during this save, when the
+     * caller should write the definition to styleWriter(), and false after.
+     */
+    bool registerSharedDefinition(const QString &id);
+
 private:
     Q_DISABLE_COPY(SvgSavingContext)
 

@@ -7,6 +7,8 @@
 #include "kis_liquify_transform_worker.h"
 
 #include <KoColorSpace.h>
+#include <cmath>
+#include <limits>
 #include "kis_grid_interpolation_tools.h"
 #include "kis_dom_utils.h"
 #include "krita_utils.h"
@@ -213,6 +215,10 @@ void KisLiquifyTransformWorker::undoPoints(const QPointF &base,
 
     QVector<int> indexes;
     m_d->transformedPointsContainer.findAllInRange(indexes, base, maxDist);
+
+    // each point moves by its own position only: all of them, then the container
+    QVector<QPointF> before(indexes.size());
+    QVector<QPointF> after(indexes.size());
     for (int i = 0; i < indexes.count(); i++) {
 
         QPointF diff = m_d->transformedPoints[indexes[i]] - base;
@@ -220,11 +226,11 @@ void KisLiquifyTransformWorker::undoPoints(const QPointF &base,
         qreal lambda = exp(-0.5 * pow2(dist / sigma));
         lambda *= amount;
 
-        QPointF oldPosition = m_d->transformedPoints[indexes[i]];
+        before[i] = m_d->transformedPoints[indexes[i]];
         m_d->transformedPoints[indexes[i]] = m_d->originalPoints[indexes[i]] * lambda + m_d->transformedPoints[indexes[i]] * (1.0 - lambda);
-
-        m_d->transformedPointsContainer.movePoint(indexes[i], oldPosition, m_d->transformedPoints[indexes[i]]);
+        after[i] = m_d->transformedPoints[indexes[i]];
     }
+    m_d->transformedPointsContainer.movePoints(indexes, before, after);
 }
 
 template <class ProcessOp>
@@ -242,6 +248,13 @@ processTransformedPixelsBuildUp(ProcessOp op,
     QVector<int> indexes;
     transformedPointsContainer.findAllInRange(indexes, base, maxDist);
 
+    // each point moves by its own position only: all of them, then the container
+    QVector<int> moved;
+    QVector<QPointF> before;
+    QVector<QPointF> after;
+    moved.reserve(indexes.size());
+    before.reserve(indexes.size());
+    after.reserve(indexes.size());
     for (int i = 0; i < indexes.count(); i++) {
 
         QPointF diff = transformedPoints[indexes[i]] - base;
@@ -249,13 +262,12 @@ processTransformedPixelsBuildUp(ProcessOp op,
         if (dist > maxDist) continue;
 
         const qreal lambda = exp(-0.5 * pow2(dist / sigma));
-        QPointF oldPosition = transformedPoints[indexes[i]];
+        moved << indexes[i];
+        before << transformedPoints[indexes[i]];
         transformedPoints[indexes[i]] = op(transformedPoints[indexes[i]], base, diff, lambda);
-
-
-        transformedPointsContainer.movePoint(indexes[i], oldPosition, transformedPoints[indexes[i]]);
-
+        after << transformedPoints[indexes[i]];
     }
+    transformedPointsContainer.movePoints(moved, before, after);
 }
 
 template <class ProcessOp>
@@ -279,6 +291,14 @@ processTransformedPixelsWash(ProcessOp op,
 
     QVector<int> indexes;
     originalPointsContainer.findAllInRange(indexes, base, maxDist);
+
+    // each point moves by its own position only: all of them, then the container
+    QVector<int> moved;
+    QVector<QPointF> before;
+    QVector<QPointF> after;
+    moved.reserve(indexes.size());
+    before.reserve(indexes.size());
+    after.reserve(indexes.size());
     for (int i = 0; i < indexes.count(); i++) {
 
         QPointF diff = originalPoints[indexes[i]] - base;
@@ -288,12 +308,13 @@ processTransformedPixelsWash(ProcessOp op,
         QPointF dstPt = op(originalPoints[indexes[i]], base, diff, lambda);
 
         if (kisDistance(dstPt, originalPoints[indexes[i]]) > kisDistance(transformedPoints[indexes[i]], originalPoints[indexes[i]])) {
-            QPointF oldPosition = transformedPoints[indexes[i]];
+            moved << indexes[i];
+            before << transformedPoints[indexes[i]];
             transformedPoints[indexes[i]] = (1.0 - flow) * transformedPoints[indexes[i]] + flow * dstPt;
-
-            transformedPointsContainer.movePoint(indexes[i], oldPosition, transformedPoints[indexes[i]]);
+            after << transformedPoints[indexes[i]];
         }
     }
+    transformedPointsContainer.movePoints(moved, before, after);
 }
 
 template <class ProcessOp>
@@ -447,6 +468,166 @@ void KisLiquifyTransformWorker::run(KisPaintDeviceSP srcDevice, KisPaintDeviceSP
     }
 }
 
+bool KisLiquifyTransformWorker::changedRect(const KisLiquifyTransformWorker &previous, QRect *rect) const
+{
+    const Private &a = *m_d;
+    const Private &b = *previous.m_d;
+    if (a.srcBounds != b.srcBounds || a.pixelPrecision != b.pixelPrecision || a.gridSize != b.gridSize ||
+        a.transformedPoints.size() != b.transformedPoints.size() || a.originalPoints != b.originalPoints) {
+        return false;
+    }
+
+    const int width = a.gridSize.width();
+    const int height = a.gridSize.height();
+    qreal left = std::numeric_limits<qreal>::max();
+    qreal top = left;
+    qreal right = std::numeric_limits<qreal>::lowest();
+    qreal bottom = right;
+    auto add = [&] (const QPointF &pt) {
+        left = qMin(left, pt.x());
+        right = qMax(right, pt.x());
+        top = qMin(top, pt.y());
+        bottom = qMax(bottom, pt.y());
+    };
+    // every cell with a moved corner, at its old and new places
+    auto addCell = [&] (int col, int row) {
+        if (col < 0 || row < 0 || col >= width - 1 || row >= height - 1) return;
+        const int i = row * width + col;
+        for (int index : {i, i + 1, i + width, i + width + 1}) {
+            add(a.transformedPoints[index]);
+            add(b.transformedPoints[index]);
+        }
+    };
+    for (int i = 0; i < a.transformedPoints.size(); i++) {
+        if (a.transformedPoints[i] == b.transformedPoints[i]) continue;
+        const int col = i % width;
+        const int row = i / width;
+        addCell(col - 1, row - 1);
+        addCell(col, row - 1);
+        addCell(col - 1, row);
+        addCell(col, row);
+    }
+    *rect = left > right ? QRect() : QRectF(QPointF(left, top), QPointF(right, bottom)).toAlignedRect().adjusted(-1, -1, 1, 1);
+    return true;
+}
+
+namespace {
+
+/// PaintDevicePolygonOp painting only within a rect
+struct ClippedPolygonOp
+{
+    ClippedPolygonOp(GridIterationTools::PaintDevicePolygonOp &op, const QRect &clip)
+        : m_op(op),
+          m_clip(clip),
+          m_testedClip(QRectF(clip).adjusted(-1, -1, 1, 1)),
+          // pixels are painted at their integer coordinates: half a pixel
+          // around them, so exactly the clip's pixels are inside, none on an
+          // edge (bands of a rect that threads paint at once never overlap)
+          m_clipPolygon(QRectF(clip).translated(-0.5, -0.5))
+    {
+        // that half pixel makes the polygon's aligned bounds one row and column too big, and
+        // threads painting neighbouring bands must not lock each other's tiles
+        m_op.setIterationLimit(clip);
+    }
+
+    void operator() (const QPolygonF &srcPolygon, const QPolygonF &dstPolygon) {
+        const QRectF bounds = dstPolygon.boundingRect();
+        if (!bounds.intersects(m_testedClip)) return;
+        // the pixels a cell may paint, the ones on its right and bottom edges too
+        if (QRect(m_clip).contains(bounds.toAlignedRect().adjusted(0, 0, 1, 1))) {
+            m_op(srcPolygon, dstPolygon);
+        } else if (KisAlgebra2D::fuzzyPointCompare(srcPolygon, dstPolygon, m_op.m_epsilon) &&
+                   KisAlgebra2D::isPolygonPixelAlignedRect(dstPolygon, m_op.m_epsilon)) {
+            // an unmoved cell, which run() copies as it is
+            m_op.fastCopyArea(bounds.toAlignedRect() & m_clip, false);
+        } else {
+            m_op(srcPolygon, dstPolygon, dstPolygon.intersected(m_clipPolygon));
+        }
+    }
+
+    void finalize() {
+        m_op.finalize();
+    }
+
+    GridIterationTools::PaintDevicePolygonOp &m_op;
+    QRect m_clip;
+    QRectF m_testedClip;
+    QPolygonF m_clipPolygon;
+};
+
+}
+
+void KisLiquifyTransformWorker::runInRect(KisPaintDeviceSP srcDevice, KisPaintDeviceSP dstDevice, const QRect &rect)
+{
+    KIS_SAFE_ASSERT_RECOVER_RETURN(*srcDevice->colorSpace() == *dstDevice->colorSpace());
+    if (rect.isEmpty()) return;
+
+    dstDevice->clear(rect);
+
+    using namespace GridIterationTools;
+    QRect correctSubGrid = calculateCorrectSubGrid(m_d->srcBounds, m_d->pixelPrecision, m_d->accumulatedBrushStrokes, m_d->gridSize);
+
+    PaintDevicePolygonOp polygonOp(srcDevice, dstDevice);
+    RegularGridIndexesOp indexesOp(m_d->gridSize);
+    // the lazy copies merge rects across the clip: copy each at once
+    polygonOp.setCanMergeRects(false);
+    ClippedPolygonOp clippedOp(polygonOp, rect);
+
+    /**
+     * Only the rows of cells that may reach the rect: cell row r spans grid
+     * rows r and r + 1; rows whose points all stay above or below the rect
+     * (with more margin than ClippedPolygonOp's) paint nothing in it, so
+     * skipping them changes nothing. Cuts the cost of a thin rect, such as
+     * a band the incremental preview paints in a thread of its own.
+     */
+    QRect subGrid = correctSubGrid;
+    if (!subGrid.isEmpty()) {
+        const qreal top = rect.top() - 2;
+        const qreal bottom = rect.bottom() + 3;
+        // whether all points of each grid row are above the rect, or all below
+        const int rows = subGrid.height();
+        QVector<char> above(rows), below(rows);
+        for (int i = 0; i < rows; i++) {
+            const QPointF *points = m_d->transformedPoints.constData() + (subGrid.top() + i) * m_d->gridSize.width();
+            bool allAbove = true;
+            bool allBelow = true;
+            for (int col = subGrid.left(); col <= subGrid.right(); col++) {
+                const qreal y = points[col].y();
+                allAbove &= y < top;
+                allBelow &= y > bottom;
+            }
+            above[i] = allAbove;
+            below[i] = allBelow;
+        }
+        // cell row r (grid rows r and r + 1) is skipped when both its grid rows are above, or both below
+        int first = -1;
+        int last = -1;
+        for (int i = 0; i + 1 < rows; i++) {
+            const bool skipped = (above[i] && above[i + 1]) || (below[i] && below[i + 1]);
+            if (skipped) continue;
+            if (first < 0) first = i;
+            last = i;
+        }
+        subGrid = first < 0 ? QRect() :
+            QRect(subGrid.left(), subGrid.top() + first, subGrid.width(), last - first + 2);
+    }
+
+    if (!subGrid.isEmpty()) {
+        iterateThroughGrid<AlwaysCompletePolygonPolicy>(clippedOp, indexesOp,
+                                                        m_d->gridSize,
+                                                        m_d->originalPoints,
+                                                        m_d->transformedPoints,
+                                                        subGrid);
+    } else {
+        clippedOp.finalize();
+    }
+    const QList<QRectF> areasToCopy = cutOutSubgridFromBounds(correctSubGrid, m_d->srcBounds, m_d->gridSize, m_d->originalPoints);
+    for (const QRectF &area : areasToCopy) {
+        const QRect clipped = area.toRect() & rect;
+        if (!clipped.isEmpty()) polygonOp.fastCopyArea(clipped, false);
+    }
+}
+
 QRect KisLiquifyTransformWorker::approxChangeRect(const QRect &rc)
 {
     const qreal margin = 0.05;
@@ -471,13 +652,26 @@ void KisLiquifyTransformWorker::transformSrcAndDst(const QTransform &t)
 
     m_d->srcBounds = t.mapRect(m_d->srcBounds);
 
-    // TODO: do it within Spatial Container
-    for (int i = 0; i < m_d->transformedPoints.count(); i++) {
-        m_d->originalPointsContainer.movePoint(i, m_d->originalPoints[i], t.map(m_d->originalPoints[i]));
-        m_d->transformedPointsContainer.movePoint(i, m_d->transformedPoints[i], t.map(m_d->transformedPoints[i]));
+    // the scale to a level of detail (a power of two) keeps the containers'
+    // structure: scale them in one pass instead of moving each point
+    if (t.type() == QTransform::TxScale && t.dx() == 0 && t.dy() == 0 &&
+        KisSpatialContainer::isExactScale(t.m11()) && KisSpatialContainer::isExactScale(t.m22())) {
 
-        m_d->originalPoints[i] = t.map(m_d->originalPoints[i]);
-        m_d->transformedPoints[i] = t.map(m_d->transformedPoints[i]);
+        m_d->originalPointsContainer.scaleExactly(t.m11(), t.m22());
+        m_d->transformedPointsContainer.scaleExactly(t.m11(), t.m22());
+        for (int i = 0; i < m_d->transformedPoints.count(); i++) {
+            m_d->originalPoints[i] = t.map(m_d->originalPoints[i]);
+            m_d->transformedPoints[i] = t.map(m_d->transformedPoints[i]);
+        }
+    } else {
+        // TODO: do it within Spatial Container
+        for (int i = 0; i < m_d->transformedPoints.count(); i++) {
+            m_d->originalPointsContainer.movePoint(i, m_d->originalPoints[i], t.map(m_d->originalPoints[i]));
+            m_d->transformedPointsContainer.movePoint(i, m_d->transformedPoints[i], t.map(m_d->transformedPoints[i]));
+
+            m_d->originalPoints[i] = t.map(m_d->originalPoints[i]);
+            m_d->transformedPoints[i] = t.map(m_d->transformedPoints[i]);
+        }
     }
     m_d->accumulatedBrushStrokes = t.map(m_d->accumulatedBrushStrokes).boundingRect();
     if (t == QTransform::fromScale(t.m11(), t.m22()) && t.m11() == t.m22()) {

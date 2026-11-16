@@ -50,6 +50,8 @@ public:
     QRectF outlineRect() const override;
     /// a group's boundingRect
     QRectF boundingRect() const override;
+    /// passes the resolution to the shapes in the group
+    void setResolution(qreal xRes, qreal yRes) override;
 
 private:
     friend class ShapeGroupContainerModel;

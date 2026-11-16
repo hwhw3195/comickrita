@@ -157,7 +157,7 @@ public:
             }
 
             yDenomNu2 = yBasedDenom(nu2);
-            yMu2 = xBasedMu(nu2, yDenomNu2);
+            yMu2 = yBasedMu(nu2, yDenomNu2);
 
             if (goodNu2 && inGoodRange(yMu2)) {
                 return getResult(nu2, yMu2);

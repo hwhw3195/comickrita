@@ -171,8 +171,9 @@ public:
         // Final value
         const double normalizedValue = std::pow(normalizedPosX, m_exponentRatio);
         double value = normalizedValue * rangeSize + minimum;
-        // If key CTRL is pressed, round to the closest step.
-        if (modifiers & Qt::ControlModifier) {
+        // If key CTRL is pressed, round to the closest step. [custom] With
+        // "Sliders snap while dragging" on, it rounds unless CTRL is pressed.
+        if (bool(modifiers & Qt::ControlModifier) != m_snapByDefault && m_fastSliderStep > 0) {
             value = std::round(value / m_fastSliderStep) * m_fastSliderStep;
         }
         //Return the value
@@ -741,6 +742,8 @@ public:
                 const QPoint currentValuePosition = pointForValue(m_q->value());
                 m_relativeDraggingOffset = currentValuePosition.x() - e->x();
                 m_useRelativeDragging = (e->modifiers() & Qt::ShiftModifier);
+                // [custom] the global setting from General > Tools, read once per drag
+                m_snapByDefault = KSharedConfig::openConfig()->group("").readEntry("SliderSnapByDefault", false);
                 if (edit) {
                     QTimer::singleShot(0, &m_startEditingSignalProxy, SLOT(start()));
                 } else {
@@ -941,6 +944,7 @@ private:
     mutable ValueType m_valueBeforeEditing {static_cast<ValueType>(0)};
     bool m_isDragging {false};
     bool m_useRelativeDragging {false};
+    bool m_snapByDefault {false};
     int m_relativeDraggingOffset {0};
     QPoint m_lastMousePressPosition;
     int m_rightClickCounter {0};

@@ -1,0 +1,11 @@
+{
+    "Icon": "",
+    "Id": "Vector Brush Strokes",
+    "Type": "Service",
+    "X-Krita-Version": "28",
+    "X-KDE-Library": "krita_vstroke",
+    "X-KDE-PluginInfo-Name": "vstroke",
+    "X-KDE-ServiceTypes": [
+        "Krita/Tool"
+    ]
+}

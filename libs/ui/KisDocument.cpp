@@ -996,6 +996,10 @@ QByteArray KisDocument::serializeToNativeByteArray()
         qWarning() << "serializeToByteArray():: Could not export to our native format";
     }
 
+    // as the other saving paths do: otherwise the document's destructor finds
+    // its image still alive (the clipboard's application/zip makes such documents)
+    d->savingImage.clear();
+
     return buffer.data();
 }
 

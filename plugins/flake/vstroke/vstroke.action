@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ActionCollection version="2" name="Krita">
+  <Actions category="Layer">
+    <text>Layer</text>
+    <Action name="add_new_freehand_vector_layer">
+      <icon>vectorLayer</icon>
+      <text>Add F&amp;reehand Vector Layer</text>
+      <whatsThis/>
+      <toolTip>Add a new vector layer for the vector brush and freehand curves</toolTip>
+      <iconText>Freehand Vector Layer</iconText>
+      <activationFlags>1000</activationFlags>
+      <activationConditions>0</activationConditions>
+      <shortcut></shortcut>
+      <isCheckable>false</isCheckable>
+      <statusTip/>
+    </Action>
+    <Action name="convert_to_freehand_vector_layer">
+      <icon>vectorLayer</icon>
+      <text>to &amp;Freehand Vector Layer</text>
+      <whatsThis/>
+      <toolTip>Convert the vector layer to a freehand vector layer</toolTip>
+      <iconText>Convert to Freehand Vector Layer</iconText>
+      <activationFlags>10000000</activationFlags>
+      <activationConditions>1</activationConditions>
+      <shortcut></shortcut>
+      <isCheckable>false</isCheckable>
+      <statusTip/>
+    </Action>
+  </Actions>
+  <Actions category="Vector">
+    <text>Vector</text>
+    <Action name="apply_current_brush_to_strokes">
+      <icon></icon>
+      <text>Apply Current Brush to Selected Strokes</text>
+      <whatsThis/>
+      <toolTip>Draw the selected brush strokes again with the current brush preset, keeping their recorded pressure, width and opacity edits</toolTip>
+      <iconText>Apply Current Brush</iconText>
+      <activationFlags>10000000</activationFlags>
+      <activationConditions>0</activationConditions>
+      <shortcut></shortcut>
+      <isCheckable>false</isCheckable>
+      <statusTip/>
+    </Action>
+  </Actions>
+</ActionCollection>

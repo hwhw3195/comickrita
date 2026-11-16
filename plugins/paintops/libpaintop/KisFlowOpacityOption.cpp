@@ -43,6 +43,8 @@ void KisFlowOpacityOption2::apply(const KisPaintInformation &info, qreal *opacit
         *opacity = m_opacityOption.computeSizeLikeValue(info, !m_indirectPaintingActive);
     }
     *flow = m_flowOption.apply(info);
+    *opacity = info.applyDensity(*opacity);
+    *flow = info.applyDensity(*flow);
 }
 
 

@@ -26,6 +26,7 @@ ToolTransformArgs::ToolTransformArgs()
     QString savedFilterId = configGroup.readEntry("filterId", "Bicubic");
     setFilterId(savedFilterId);
     m_transformAroundRotationCenter = configGroup.readEntry("transformAroundRotationCenter", "0").toInt();
+    m_scaleBrushSizes = configGroup.readEntry("scaleBrushSizes", false);
     m_meshShowHandles = configGroup.readEntry("meshShowHandles", true);
     m_meshSymmetricalHandles = configGroup.readEntry("meshSymmetricalHandles", true);
     m_meshScaleHandles = configGroup.readEntry("meshScaleHandles", false);
@@ -48,6 +49,14 @@ void ToolTransformArgs::setTransformAroundRotationCenter(bool value)
     configGroup.writeEntry("transformAroundRotationCenter", int(value));
 }
 
+void ToolTransformArgs::setScaleBrushSizes(bool value)
+{
+    m_scaleBrushSizes = value;
+
+    KConfigGroup configGroup =  KSharedConfig::openConfig()->group("KisToolTransform");
+    configGroup.writeEntry("scaleBrushSizes", value);
+}
+
 void ToolTransformArgs::init(const ToolTransformArgs& args)
 {
     m_mode = args.mode();
@@ -55,6 +64,7 @@ void ToolTransformArgs::init(const ToolTransformArgs& args)
     m_originalCenter = args.originalCenter();
     m_rotationCenterOffset = args.rotationCenterOffset();
     m_transformAroundRotationCenter = args.transformAroundRotationCenter();
+    m_scaleBrushSizes = args.scaleBrushSizes();
     m_cameraPos = args.m_cameraPos;
     m_aX = args.aX();
     m_aY = args.aY();
@@ -80,6 +90,7 @@ void ToolTransformArgs::init(const ToolTransformArgs& args)
     if (args.m_liquifyWorker) {
         m_liquifyWorker.reset(new KisLiquifyTransformWorker(*args.m_liquifyWorker.data()));
     }
+    m_liquifyDabs = args.m_liquifyDabs;
 
     m_meshTransform = args.m_meshTransform;
     m_meshShowHandles = args.m_meshShowHandles;
@@ -145,6 +156,7 @@ bool ToolTransformArgs::operator==(const ToolTransformArgs& other) const
         m_originalCenter == other.m_originalCenter &&
         m_rotationCenterOffset == other.m_rotationCenterOffset &&
         m_transformAroundRotationCenter == other.m_transformAroundRotationCenter &&
+        m_scaleBrushSizes == other.m_scaleBrushSizes &&
         m_aX == other.m_aX &&
         m_aY == other.m_aY &&
         m_aZ == other.m_aZ &&
@@ -172,8 +184,17 @@ bool ToolTransformArgs::operator==(const ToolTransformArgs& other) const
         ((m_liquifyWorker && other.m_liquifyWorker &&
           *m_liquifyWorker == *other.m_liquifyWorker)
          || m_liquifyWorker == other.m_liquifyWorker) &&
+            m_liquifyDabs == other.m_liquifyDabs &&
             m_pixelPrecision == other.m_pixelPrecision &&
             m_previewPixelPrecision == other.m_previewPixelPrecision;
+}
+
+bool ToolTransformArgs::isSameLiquifyDeformation(const ToolTransformArgs& other) const
+{
+    return m_mode == LIQUIFY && other.m_mode == LIQUIFY &&
+        m_liquifyDabs == other.m_liquifyDabs &&
+        ((m_liquifyWorker && other.m_liquifyWorker && *m_liquifyWorker == *other.m_liquifyWorker) ||
+         m_liquifyWorker == other.m_liquifyWorker);
 }
 
 bool ToolTransformArgs::isSameMode(const ToolTransformArgs& other) const
@@ -345,7 +366,8 @@ bool ToolTransformArgs::isIdentity() const
 
         return true;
     } else if (m_mode == LIQUIFY) {
-        return !m_liquifyWorker || m_liquifyWorker->isIdentity();
+        // Liquify on vector layers alone records dabs and leaves the grid alone
+        return (!m_liquifyWorker || m_liquifyWorker->isIdentity()) && m_liquifyDabs.isEmpty();
     } else if (m_mode == MESH) {
         return m_meshTransform.isIdentity();
     } else {
@@ -362,6 +384,7 @@ bool ToolTransformArgs::isUnchanging() const
 void ToolTransformArgs::initLiquifyTransformMode(const QRect &srcRect)
 {
     m_liquifyWorker.reset(new KisLiquifyTransformWorker(srcRect, 0, 8));
+    m_liquifyDabs.clear();
     m_liquifyProperties->loadAndResetMode();
 }
 

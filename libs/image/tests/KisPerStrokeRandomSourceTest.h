@@ -16,6 +16,7 @@ private Q_SLOTS:
     void testIndependent();
     void testDependent();
     void testDifferentKeys();
+    void testSeeded();
 };
 
 #endif // KISPERSTROKERANDOMSOURCETEST_H

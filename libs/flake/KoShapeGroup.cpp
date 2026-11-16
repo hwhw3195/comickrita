@@ -127,6 +127,13 @@ bool KoShapeGroup::hitTest(const QPointF &position) const
     return false;
 }
 
+void KoShapeGroup::setResolution(qreal xRes, qreal yRes)
+{
+    Q_FOREACH (KoShape *shape, shapes()) {
+        shape->setResolution(xRes, yRes);
+    }
+}
+
 void KoShapeGroup::tryUpdateCachedSize() const
 {
     if (!d->sizeCached) {

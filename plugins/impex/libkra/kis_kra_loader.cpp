@@ -1060,6 +1060,9 @@ KisNodeSP KisKraLoader::loadNode(const QDomElement& element, KisImageSP image)
             KisShapeLayer *shapeLayer = qobject_cast<KisShapeLayer*>(node.data());
             shapeLayer->setAntialiased(value);
         }
+        if (element.attribute(FREEHAND_VECTOR, "0") != "0") {
+            node->setNodeProperty(FREEHAND_VECTOR, true);
+        }
     }
 
 

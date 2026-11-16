@@ -212,6 +212,9 @@ android {
 
         targetSdkVersion 36
         minSdkVersion 24
+        // comicKrita: its own package id (org.krita.comickrita, plus the build
+        // type's suffix), so it installs beside the official Krita
+        applicationIdSuffix ".comickrita"
         versionCode project.ext.constant * 1000000 + versionMajor * 10000 + versionMinor * 100 + versionRelease
         versionName "5.3.4.2"
         def unstableSuffix = System.getenv('KRITA_UNSTABLE_PACKAGE_SUFFIX')

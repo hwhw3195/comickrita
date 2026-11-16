@@ -10,6 +10,8 @@ set(kritaversion_LIB_SRCS
 
 kis_add_library(kritaversion SHARED ${kritaversion_LIB_SRCS})
 target_link_libraries(kritaversion Qt${QT_MAJOR_VERSION}::Core)
+# comicKrita: the fork's release name follows Krita's version where the git hash is shown
+target_compile_definitions(kritaversion PRIVATE COMICKRITA_RELEASE="${COMICKRITA_RELEASE}")
 generate_export_header(kritaversion BASE_NAME kritaversion)
 
 set_target_properties(kritaversion PROPERTIES

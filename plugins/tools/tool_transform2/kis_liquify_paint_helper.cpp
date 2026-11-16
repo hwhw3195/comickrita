@@ -73,9 +73,11 @@ QPainterPath KisLiquifyPaintHelper::brushOutline(const KisLiquifyProperties &pro
 }
 
 void KisLiquifyPaintHelper::configurePaintOp(const KisLiquifyProperties &props,
-                                             KisLiquifyTransformWorker *worker)
+                                             KisLiquifyTransformWorker *worker,
+                                             QVector<KisShapeLayerHooks::LiquifyDab> *dabs,
+                                             bool moveGrid)
 {
-    m_d->paintOp.reset(new KisLiquifyPaintop(props, worker));
+    m_d->paintOp.reset(new KisLiquifyPaintop(props, worker, dabs, moveGrid));
 }
 
 void KisLiquifyPaintHelper::startPaint(KoPointerEvent *event, const KoCanvasResourceProvider *manager)

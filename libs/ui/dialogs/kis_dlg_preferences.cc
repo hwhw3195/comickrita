@@ -385,6 +385,8 @@ GeneralTab::GeneralTab(QWidget *_parent, const char *_name)
     cmbFlowMode->setCurrentIndex((int)!cfg.readEntry<bool>("useCreamyAlphaDarken", true));
     cmbCmykBlendingMode->setCurrentIndex((int)!cfg.readEntry<bool>("useSubtractiveBlendingForCmykColorSpaces", true));
     m_chkSwitchSelectionCtrlAlt->setChecked(cfg.switchSelectionCtrlAlt());
+    // [custom] read by KisSliderSpinBoxPrivate when a drag starts
+    chkSliderSnapByDefault->setChecked(cfg.readEntry<bool>("SliderSnapByDefault", false));
     cmbTouchPainting->addItem(
         KoPointerEvent::tabletInputReceived() ? i18nc("touch painting", "Auto (Disabled)")
                                               : i18nc("touch painting", "Auto (Enabled)"));
@@ -840,6 +842,7 @@ void GeneralTab::setDefault()
     chkTouchPressureSensitivity->setChecked(true);
     chkEnableTransformToolAfterPaste->setChecked(cfg.activateTransformToolAfterPaste(true));
     chkZoomHorizontally->setChecked(cfg.zoomHorizontal(true));
+    chkSliderSnapByDefault->setChecked(false);
     m_chkConvertOnImport->setChecked(cfg.convertToImageColorspaceOnImport(true));
 
     KoColor cursorColor(KoColorSpaceRegistry::instance()->rgb8());
@@ -2949,6 +2952,7 @@ bool KisDlgPreferences::editPreferences(std::optional<PageDesc>page)
         cfg.writeEntry("useTouchPressureSensitivity", m_general->chkTouchPressureSensitivity->isChecked());
         cfg.setActivateTransformToolAfterPaste(m_general->chkEnableTransformToolAfterPaste->isChecked());
         cfg.setZoomHorizontal(m_general->chkZoomHorizontally->isChecked());
+        cfg.writeEntry<bool>("SliderSnapByDefault", m_general->chkSliderSnapByDefault->isChecked());
         cfg.setSelectionActionBar(m_general->chkEnableSelectionActionBar->isChecked());
 
         cfg.setConvertToImageColorspaceOnImport(m_general->convertToImageColorspaceOnImport());

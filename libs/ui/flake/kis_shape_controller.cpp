@@ -5,6 +5,7 @@
  */
 
 #include "kis_shape_controller.h"
+#include "KisShapeLayerHooks.h"
 
 
 #include <klocalizedstring.h>
@@ -191,10 +192,11 @@ KoShapeContainer *KisShapeController::createParentForShapes(const QList<KoShape 
                 dynamic_cast<KisShapeLayer*>(
                     canvas->selectedShapesProxy()->selection()->activeLayer());
 
-        if (!shapeLayer || forceNewLayer) {
+        if (!shapeLayer || forceNewLayer || KisShapeLayerHooks::needsNewLayer(shapes, shapeLayer)) {
             shapeLayer = new KisShapeLayer(this, image(),
                                            i18n("Vector Layer %1", m_d->nameServer->number()),
                                            OPACITY_OPAQUE_U8);
+            KisShapeLayerHooks::initNewLayer(shapeLayer, shapes);
 
             resultCommand->addCommand(
                         new KisImageLayerAddCommand(image(),

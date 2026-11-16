@@ -21,6 +21,7 @@
 #include "kis_canvas2.h"
 #include <QPainterPath>
 #include <kis_shape_layer.h>
+#include <KisShapeLayerHooks.h>
 #include <KoShapeManager.h>
 #include <KoShape.h>
 #include <KoPathShape.h>
@@ -220,7 +221,12 @@ namespace KisToolUtils {
                     return;
                 }
 
-                if(node->hasEditablePaintDevice()) {
+                if (KisShapeLayer *shapeLayer = dynamic_cast<KisShapeLayer*>(node.data())) {
+                    KUndo2Command *cmd = node->isEditable() ? KisShapeLayerHooks::clearCommand(shapeLayer, selection) : nullptr;
+                    if (cmd) {
+                        applicator.applyCommand(cmd, KisStrokeJobData::SEQUENTIAL, KisStrokeJobData::EXCLUSIVE);
+                    }
+                } else if(node->hasEditablePaintDevice()) {
                     KUndo2Command *cmd =
                         new KisCommandUtils::LambdaCommand(kundo2_i18n("Clear"),
                             [node, selection] () {

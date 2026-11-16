@@ -72,6 +72,8 @@ const QString LAYERS = "layers";
 const QString NODE_TYPE = "nodetype";
 const QString LOCKED = "locked";
 const QString ANTIALIASED = "antialiased";
+// a vector layer flagged by a plugin (the freehand vector layer); saved from and loaded to the node property of the same name
+const QString FREEHAND_VECTOR = "freehandvector";
 const QString MASK = "mask";
 const QString MASKS = "masks";
 const QString MIME = "mime";

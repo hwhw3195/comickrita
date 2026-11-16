@@ -37,6 +37,9 @@ KisMergeLabeledLayersCommand::KisMergeLabeledLayersCommand(KisImageSP image,
     , m_activeNode(nullptr)
 {
     KIS_ASSERT(newRefPaintDevice);
+    // the copies of vector layers re-render (and are empty until they do) when
+    // they land in an image of another resolution
+    m_refImage->setResolution(image->xRes(), image->yRes());
     if (image->animationInterface()->hasAnimation()) {
         m_refImage->animationInterface()->switchCurrentTimeAsync(image->animationInterface()->currentTime());
         m_refImage->waitForDone();
@@ -68,6 +71,9 @@ KisMergeLabeledLayersCommand::KisMergeLabeledLayersCommand(KisImageSP image,
     KIS_SAFE_ASSERT_RECOVER_NOOP(newRefNodeInfoList);
     KIS_SAFE_ASSERT_RECOVER_NOOP(prevRefPaintDevice);
     KIS_ASSERT(newRefPaintDevice);
+    // the copies of vector layers re-render (and are empty until they do) when
+    // they land in an image of another resolution
+    m_refImage->setResolution(image->xRes(), image->yRes());
     if (image->animationInterface()->hasAnimation()) {
         m_refImage->animationInterface()->switchCurrentTimeAsync(image->animationInterface()->currentTime());
         m_refImage->waitForDone();

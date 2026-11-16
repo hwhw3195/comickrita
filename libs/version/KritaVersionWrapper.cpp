@@ -18,6 +18,11 @@ QString KritaVersionWrapper::versionString(bool checkGit)
         QString gitVersion = QStringLiteral(KRITA_GIT_SHA1_STRING);
         version = QStringLiteral("%1 (git %2)").arg(kritaVersion, gitVersion);
 #endif
+        // comicKrita: a build of the fork says so wherever the full version
+        // is shown (About, the logs). The plain version, which is written
+        // into files, stays Krita's.
+        const QString release = QStringLiteral(COMICKRITA_RELEASE);
+        version += release.isEmpty() ? QStringLiteral(" comicKrita") : QStringLiteral(" comicKrita %1").arg(release);
     }
     return version;
 }

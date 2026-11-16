@@ -6,6 +6,8 @@
 #ifndef KIS_SHAPE_LAYER_CANVAS_H
 #define KIS_SHAPE_LAYER_CANVAS_H
 
+#include <functional>
+
 #include <QMutex>
 #include <QRegion>
 #include <KoCanvasBase.h>
@@ -103,6 +105,9 @@ public:
     void resetCache(const KoColorSpace *colorSpace = 0) override;
     void rerenderAfterBeingInvisible() override;
 
+    /// see KisShapeLayer::setLiveOverlay()
+    void setLiveOverlay(const std::function<void(QPainter&, const QRect&)> &overlay);
+
 
 private Q_SLOTS:
     friend class KisRepaintShapeLayerLayerJob;
@@ -123,6 +128,9 @@ private:
     QRegion m_dirtyRegion;
     QMutex m_dirtyRegionMutex;
     KoShapeManager::PaintJobsOrder m_paintJobsOrder;
+
+    std::function<void(QPainter&, const QRect&)> m_liveOverlay; ///< GUI thread
+    std::function<void(QPainter&, const QRect&)> m_paintJobsLiveOverlay; ///< taken with m_paintJobsOrder
 
     QRect m_cachedImageRect;
 

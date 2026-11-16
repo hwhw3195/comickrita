@@ -271,6 +271,7 @@ private:
     bool m_currentlyUsingOverlayPreviewStyle {false};
     bool m_preferOverlayPreviewStyle {false};
     bool m_forceLodMode {false};
+    bool m_showLiquifyReach {true};
 
 
     QPainterPath m_selectionPath; // original (unscaled) selection outline, used for painting decorations
@@ -320,6 +321,14 @@ private:
     KisTransformStrategyBase* currentStrategy() const;
 
     QPainterPath m_cursorOutline;
+    QPointF m_cursorReachCenter; // in image pixels
+    qreal m_cursorReachRadius {0.0};
+
+    // the layers the stroke started on, as asked for: the transaction comes later
+    KisNodeList m_strokeRootNodes;
+    // the mode of the stroke while the args don't know it (it is starting, or over)
+    ToolTransformArgs::TransformMode m_lastStrokeMode {ToolTransformArgs::FREE_TRANSFORM};
+    bool m_layerSelectionChangePending {false};
 
     KisAsynchronousStrokeUpdateHelper m_asyncUpdateHelper;
 
@@ -347,6 +356,9 @@ private Q_SLOTS:
 
     void slotTransactionGenerated(TransformTransactionProperties transaction, ToolTransformArgs args, void *strokeStrategyCookie);
     void slotPreviewDeviceGenerated(KisPaintDeviceSP device);
+
+    void slotLayerSelectionChanged();
+    void followLayerSelection();
 
     // context menu options for updating the transform type
     // this is to help with discoverability since come people can't find the tool options

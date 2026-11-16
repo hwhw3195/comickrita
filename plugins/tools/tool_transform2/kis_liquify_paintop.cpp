@@ -18,17 +18,27 @@
 #include "kis_timing_information.h"
 
 
+namespace {
+const qreal sizeToSigmaCoeff = 1.0 / 3.0;
+// where KisLiquifyTransformWorker stops looking for points to move
+const qreal sigmaToReachCoeff = 3.0;
+}
+
 struct KisLiquifyPaintop::Private
 {
-    Private(const KisLiquifyProperties &_props, KisLiquifyTransformWorker *_worker)
-        : props(_props), worker(_worker) {}
+    Private(const KisLiquifyProperties &_props, KisLiquifyTransformWorker *_worker,
+            QVector<KisShapeLayerHooks::LiquifyDab> *_dabs, bool _moveGrid)
+        : props(_props), worker(_worker), dabs(_dabs), moveGrid(_moveGrid) {}
 
     KisLiquifyProperties props;
     KisLiquifyTransformWorker *worker;
+    QVector<KisShapeLayerHooks::LiquifyDab> *dabs;
+    bool moveGrid;
 };
 
-KisLiquifyPaintop::KisLiquifyPaintop(const KisLiquifyProperties &props, KisLiquifyTransformWorker *worker)
-    : m_d(new Private(props, worker))
+KisLiquifyPaintop::KisLiquifyPaintop(const KisLiquifyProperties &props, KisLiquifyTransformWorker *worker,
+                                     QVector<KisShapeLayerHooks::LiquifyDab> *dabs, bool moveGrid)
+    : m_d(new Private(props, worker, dabs, moveGrid))
 {
 }
 
@@ -95,6 +105,11 @@ QPainterPath KisLiquifyPaintop::brushOutline(const KisLiquifyProperties &props,
     return outline;
 }
 
+qreal KisLiquifyPaintop::effectReach(const KisLiquifyProperties &props)
+{
+    return sigmaToReachCoeff * sizeToSigmaCoeff * props.size();
+}
+
 // TODO: Reduce code duplication between KisLiquifyPaintop and KisPaintOp. It might be possible to
 // make them both subclasses of some more general base class.
 void KisLiquifyPaintop::updateSpacing(const KisPaintInformation &info,
@@ -145,9 +160,15 @@ KisSpacingInformation KisLiquifyPaintop::paintAt(const KisPaintInformation &pi)
     switch (m_d->props.mode()) {
     case KisLiquifyProperties::MOVE: {
         const qreal offsetLength = size * amount;
-        m_d->worker->translatePoints(pi.pos(),
-                                     pi.drawingDirectionVector() * offsetLength,
-                                     size, useWashMode, flow);
+        if (m_d->moveGrid) {
+            m_d->worker->translatePoints(pi.pos(),
+                                         pi.drawingDirectionVector() * offsetLength,
+                                         size, useWashMode, flow);
+        }
+        if (m_d->dabs) {
+            *m_d->dabs << KisShapeLayerHooks::LiquifyDab{pi.pos(), pi.drawingDirectionVector() * offsetLength,
+                                                        size, useWashMode, flow};
+        }
 
         break;
     }
@@ -163,9 +184,16 @@ KisSpacingInformation KisLiquifyPaintop::paintAt(const KisPaintInformation &pi)
         break;
     case KisLiquifyProperties::OFFSET: {
         const qreal offsetLength = size * amount;
-        m_d->worker->translatePoints(pi.pos(),
-                                     KisAlgebra2D::rightUnitNormal(pi.drawingDirectionVector()) * offsetLength,
-                                     size, useWashMode, flow);
+        if (m_d->moveGrid) {
+            m_d->worker->translatePoints(pi.pos(),
+                                         KisAlgebra2D::rightUnitNormal(pi.drawingDirectionVector()) * offsetLength,
+                                         size, useWashMode, flow);
+        }
+        if (m_d->dabs) {
+            *m_d->dabs << KisShapeLayerHooks::LiquifyDab{pi.pos(),
+                                                        KisAlgebra2D::rightUnitNormal(pi.drawingDirectionVector()) * offsetLength,
+                                                        size, useWashMode, flow};
+        }
         break;
     }
     case KisLiquifyProperties::UNDO:
@@ -195,7 +223,6 @@ KisTimingInformation KisLiquifyPaintop::updateTimingImpl(const KisPaintInformati
 
 qreal KisLiquifyPaintop::computeSize(const KisPaintInformation &pi) const
 {
-    static const qreal sizeToSigmaCoeff = 1.0 / 3.0;
     return sizeToSigmaCoeff *
         (m_d->props.sizeHasPressure() ?
          pi.pressure() * m_d->props.size():

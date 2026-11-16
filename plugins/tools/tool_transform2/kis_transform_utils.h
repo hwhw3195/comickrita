@@ -190,6 +190,20 @@ public:
     static KisNodeSP tryOverrideRootToTransformMask(KisNodeSP root);
 
     static int fetchCurrentImageTime(KisNodeList rootNodes);
+    /// the modes in which vector layers that take them move their shapes by the mode's point map (KisShapeLayerHooks::DeformMap)
+    static bool isVectorDeformMode(ToolTransformArgs::TransformMode mode);
+    /// whether \p node moves its shapes by the point map of \p mode itself
+    static bool isVectorDeformTarget(ToolTransformArgs::TransformMode mode, const KisNode *node);
+    /**
+     * whether \p node previews \p mode at full resolution only: a vector layer
+     * Liquify or a deforming mode moves itself, or one holding brush strokes
+     * in Free Transform / Perspective (a reduced preview would scale its
+     * brush sizes). Instant Preview does nothing for such a layer.
+     */
+    static bool vectorForcesFullResolution(ToolTransformArgs::TransformMode mode, const KisNode *node);
+    /// where \p args sends every point of the image, for the vector layers of a deforming mode; \p selection limits it
+    static KisShapeLayerHooks::DeformMap vectorDeformMap(const ToolTransformArgs &args, KisSelectionSP selection);
+
     static QList<KisNodeSP> fetchNodesList(ToolTransformArgs::TransformMode mode, KisNodeList rootNodes, bool isExternalSourcePresent, KisSelectionSP selection);
     static bool tryInitArgsFromNode(KisNodeList rootNodes, ToolTransformArgs *args);
     static bool tryFetchArgsFromCommandAndUndo(ToolTransformArgs *outArgs, ToolTransformArgs::TransformMode mode, KisNodeList currentNodes, KisNodeList selectedNodes, KisStrokeUndoFacade *undoFacade, int currentTime, QVector<KisStrokeJobData *> *undoJobs, const KisSavedMacroCommand **overriddenCommand);

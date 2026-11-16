@@ -42,6 +42,8 @@
 #include <KoColorPopupAction.h>
 #include <KoMarker.h>
 #include <KoShapeStroke.h>
+#include <KoStrokeFeatures.h>
+#include <algorithm>
 #include <KoPathShape.h>
 #include <KoMarkerCollection.h>
 #include <KoPathShapeMarkerCommand.h>
@@ -678,7 +680,18 @@ void KoStrokeConfigWidget::selectionChanged()
     if (stroke && KoFlake::compareShapePropertiesEqual<CheckShapeStrokeWidthPolicy>(shapes)) {
         d->ui->lineWidth->changeValue(stroke->lineWidth());
     } else {
-        d->ui->lineWidth->changeValue(0);
+        // mixed widths show their median, so the arrows start near what the strokes have
+        QVector<qreal> widths;
+        Q_FOREACH (KoShape *selected, shapes) {
+            if (const KoShapeStrokeSP selectedStroke = qSharedPointerDynamicCast<KoShapeStroke>(selected->stroke())) {
+                widths << selectedStroke->lineWidth();
+            }
+        }
+        std::sort(widths.begin(), widths.end());
+        const int count = widths.size();
+        d->ui->lineWidth->changeValue(!count ? 0 :
+                                      count % 2 ? widths[count / 2] :
+                                      0.5 * (widths[count / 2 - 1] + widths[count / 2]));
     }
 
 
@@ -765,6 +778,21 @@ void KoStrokeConfigWidget::selectionChanged()
 
     updateStyleControlsAvailability(!shapes.isEmpty());
 
+    // some shapes follow only part of the stroke
+    KoStrokeFeatures::Features features = KoStrokeFeatures::All;
+    Q_FOREACH (KoShape *selected, shapes) {
+        if (const KoStrokeFeatures *shapeFeatures = dynamic_cast<const KoStrokeFeatures*>(selected)) {
+            features &= shapeFeatures->strokeFeatures();
+        }
+    }
+    const bool hasShapes = !shapes.isEmpty();
+    d->ui->lineWidth->setEnabled(hasShapes && features.testFlag(KoStrokeFeatures::Width));
+    d->capNJoinMenu->setEnabled(hasShapes && features.testFlag(KoStrokeFeatures::CapAndJoin));
+    d->ui->capNJoinButton->setEnabled(!hasShapes || features.testFlag(KoStrokeFeatures::CapAndJoin));
+    d->ui->lineStyle->setEnabled(hasShapes && features.testFlag(KoStrokeFeatures::LineStyle));
+    d->startMarkerSelector->setEnabled(hasShapes && features.testFlag(KoStrokeFeatures::Markers));
+    d->midMarkerSelector->setEnabled(hasShapes && features.testFlag(KoStrokeFeatures::Markers));
+    d->endMarkerSelector->setEnabled(hasShapes && features.testFlag(KoStrokeFeatures::Markers));
 }
 
 void KoStrokeConfigWidget::canvasResourceChanged(int key, const QVariant &value)

@@ -147,6 +147,15 @@ inline void LayerBox::addActionToMenu(QMenu *menu, const QString &id)
     }
 }
 
+inline void LayerBox::addOptionalActionToMenu(QMenu *menu, const QString &id)
+{
+    if (m_canvas) {
+        if (QAction *action = m_canvas->viewManager()->actionManager()->actionByName(id)) {
+            menu->addAction(action);
+        }
+    }
+}
+
 qint32 LayerBox::convertOpacityToInt(qreal opacity)
 {
     /**
@@ -623,6 +632,7 @@ void LayerBox::setCanvas(KoCanvasBase *canvas)
         addActionToMenu(m_newLayerMenu, "add_new_group_layer");
         addActionToMenu(m_newLayerMenu, "add_new_clone_layer");
         addActionToMenu(m_newLayerMenu, "add_new_shape_layer");
+        addOptionalActionToMenu(m_newLayerMenu, "add_new_freehand_vector_layer");
         addActionToMenu(m_newLayerMenu, "add_new_adjustment_layer");
         addActionToMenu(m_newLayerMenu, "add_new_fill_layer");
         addActionToMenu(m_newLayerMenu, "add_new_file_layer");
@@ -1266,6 +1276,7 @@ void LayerBox::updateLayerOpMenu(const QModelIndex &index, QMenu &menu) {
             addActionToMenu(convertToMenu, "convert_to_filter_mask");
             addActionToMenu(convertToMenu, "convert_to_selection_mask");
             addActionToMenu(convertToMenu, "convert_to_file_layer");
+            addOptionalActionToMenu(convertToMenu, "convert_to_freehand_vector_layer");
             addActionToMenu(convertToMenu, "convert_group_to_animated");
             addActionToMenu(convertToMenu, "layercolorspaceconversion");
 

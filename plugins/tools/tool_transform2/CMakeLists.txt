@@ -19,8 +19,10 @@ set(kritatooltransform_static_SRCS
     kis_free_transform_strategy_gsl_helpers.cpp
     kis_perspective_transform_strategy.cpp
     kis_transform_utils.cpp
+    kis_vector_deform_maps.cpp
     strokes/transform_stroke_strategy.cpp
     strokes/inplace_transform_stroke_strategy.cpp
+    strokes/kis_vector_transform_pass.cpp
     )
 
 ki18n_wrap_ui(kritatooltransform_static_SRCS wdg_tool_transform.ui)

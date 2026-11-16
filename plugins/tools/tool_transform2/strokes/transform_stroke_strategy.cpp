@@ -5,6 +5,7 @@
  */
 
 #include "transform_stroke_strategy.h"
+#include <kis_shape_layer.h>
 
 #include <QMutexLocker>
 #include "kundo2commandextradata.h"
@@ -67,6 +68,8 @@ TransformStrokeStrategy::TransformStrokeStrategy(ToolTransformArgs::TransformMod
       m_forceReset(forceReset),
       m_selection(selection)
 {
+    m_liquifyProperties.loadAndResetMode();
+
     if (selection) {
         Q_FOREACH(KisNodeSP node, rootNodes) {
             KIS_SAFE_ASSERT_RECOVER_NOOP(!dynamic_cast<KisTransformMask*>(node.data()));
@@ -158,6 +161,8 @@ void TransformStrokeStrategy::doStrokeCallback(KisStrokeJobData *data)
                                                   bounds.height(),
                                                   rootNode->image()->colorSpace(),
                                                   "transformed_image");
+            // vector layers place their shapes by the image's resolution
+            clonedImage->setResolution(rootNode->image()->xRes(), rootNode->image()->yRes());
 
             // BUG: 413968
             // Workaround: Group layers wouldn't properly render the right frame
@@ -318,7 +323,15 @@ void TransformStrokeStrategy::doStrokeCallback(KisStrokeJobData *data)
             } else if (KisExternalLayer *extLayer =
                   dynamic_cast<KisExternalLayer*>(td->node.data())) {
 
-                if (td->config.mode() == ToolTransformArgs::FREE_TRANSFORM ||
+                KisVectorTransformPass::Sink sink;
+                sink.execute = [this] (KUndo2Command *command) {
+                    runAndSaveCommand(KUndo2CommandSP(command), KisStrokeJobData::CONCURRENT, KisStrokeJobData::NORMAL);
+                };
+                sink.addDirtyRect = [this, td] (const QRect &rect) { m_updateData->addUpdate(td->node, rect); };
+
+                if (m_vectors.transformNode(td->node, td->config, sink)) {
+                    // a vector layer whose shapes a plugin moves itself (KisShapeLayerHooks)
+                } else if (td->config.mode() == ToolTransformArgs::FREE_TRANSFORM ||
                     (td->config.mode() == ToolTransformArgs::PERSPECTIVE_4POINT &&
                      extLayer->supportsPerspectiveTransform())) {
 
@@ -327,9 +340,7 @@ void TransformStrokeStrategy::doStrokeCallback(KisStrokeJobData *data)
                     KisTransformWorker w = KisTransformUtils::createTransformWorker(td->config, 0, 0);
                     QTransform t = w.transform();
 
-                    runAndSaveCommand(KUndo2CommandSP(extLayer->transform(t)),
-                                      KisStrokeJobData::CONCURRENT,
-                                      KisStrokeJobData::NORMAL);
+                    m_vectors.freeTransform(extLayer, td->config, t, sink);
 
                     /**
                      * Shape layer's projection may not be yet ready right
@@ -542,6 +553,7 @@ void TransformStrokeStrategy::initStrokeCallback()
     ToolTransformArgs initialTransformArgs;
     bool isExternalSourcePresent = false;
     m_processedNodes = KisTransformUtils::fetchNodesList(m_mode, m_rootNodes, isExternalSourcePresent, m_selection);
+    m_vectors.init(m_mode, m_processedNodes, !!m_selection, isExternalSourcePresent);
 
     bool argsAreInitialized = false;
     QVector<KisStrokeJobData *> lastCommandUndoJobs;
@@ -564,6 +576,11 @@ void TransformStrokeStrategy::initStrokeCallback()
     extraInitJobs << new Data(new KisHoldUIUpdatesCommand(m_updatesFacade, KisCommandUtils::FlipFlopCommand::INITIALIZING), false, KisStrokeJobData::BARRIER);
 
     extraInitJobs << lastCommandUndoJobs;
+
+    // after the undo, as continuing a transform brings back the selection it started from
+    KritaUtils::addJobBarrier(extraInitJobs, [this]() {
+        m_vectors.setSelection(m_selection);
+    });
 
     KritaUtils::addJobSequential(extraInitJobs, [this]() {
         // When dealing with animated transform mask layers, create keyframe and save the command for undo.
@@ -656,6 +673,10 @@ void TransformStrokeStrategy::initStrokeCallback()
         TransformTransactionProperties transaction(srcRect, &initialTransformArgs, m_rootNodes, m_processedNodes);
         if (!argsAreInitialized) {
             initialTransformArgs = KisTransformUtils::resetArgsForMode(m_mode, m_filterId, transaction, 0);
+        }
+        // also when continuing a stroke: its brush settings may be older than the saved ones
+        if (initialTransformArgs.liquifyProperties()) {
+            *initialTransformArgs.liquifyProperties() = m_liquifyProperties;
         }
 
         this->m_initialTransformArgs = initialTransformArgs;
@@ -777,6 +798,9 @@ void TransformStrokeStrategy::finishStrokeImpl(bool applyTransform, const ToolTr
             deactivatedOverlaySelectionMask->selection()->setVisible(true);
             deactivatedOverlaySelectionMask->setDirty();
         }
+
+        // the end of the vector layers' moves: the last commands hold them, or they go back
+        m_vectors.finish(applyTransform);
 
         if (applyTransform) {
             KisStrokeStrategyUndoCommandBased::finishStrokeCallback();

@@ -25,6 +25,7 @@
 #include "kis_liquify_transform_worker.h"
 #include "KoCanvasResourceProvider.h"
 #include "kis_tool_utils.h"
+#include <KisShapeLayerHooks.h>
 
 
 struct KisLiquifyTransformStrategy::Private
@@ -146,7 +147,13 @@ bool KisLiquifyTransformStrategy::acceptsClicks() const
 bool KisLiquifyTransformStrategy::beginPrimaryAction(KoPointerEvent *event)
 {
     m_d->lastDocPos = event->point;
-    m_d->helper.configurePaintOp(*m_d->currentArgs.liquifyProperties(), m_d->currentArgs.liquifyWorker());
+    // vector layers move by the dabs: with only those, nothing reads the raster grid
+    const KisNodeList nodes = m_d->transaction.transformedNodes();
+    const bool moveGrid = !std::all_of(nodes.begin(), nodes.end(), [] (KisNodeSP node) {
+        return KisShapeLayerHooks::isLiquifyTarget(node.data());
+    });
+    m_d->helper.configurePaintOp(*m_d->currentArgs.liquifyProperties(), m_d->currentArgs.liquifyWorker(),
+                                 m_d->currentArgs.liquifyDabsForWrite(), moveGrid);
     m_d->helper.startPaint(event, m_d->manager);
 
     m_d->recalculateTransformations();
@@ -287,6 +294,7 @@ void KisLiquifyTransformStrategy::changeBrushSize(KoCanvasBase *canvas, bool inc
     }
 
     props->setSize(newSize);
+    m_d->currentArgs.saveLiquifyTransformMode();
     KisToolUtils::showBrushSizeFloatingMessage(canvas, newSize);
     Q_EMIT requestCursorOutlineUpdate( m_d->converter->documentToImage(m_d->lastDocPos));
     Q_EMIT requestUpdateOptionWidget();

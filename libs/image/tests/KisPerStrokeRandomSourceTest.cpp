@@ -67,4 +67,30 @@ void KisPerStrokeRandomSourceTest::testDifferentKeys()
     QVERIFY(sourcesDiffer);
 }
 
+void KisPerStrokeRandomSourceTest::testSeeded()
+{
+    for (int seed = 0; seed < 1000; seed++) {
+        KisPerStrokeRandomSource s1(seed);
+        KisPerStrokeRandomSource s2(seed);
+
+        QCOMPARE(s1.seed(), seed);
+        QCOMPARE(s1.generate("mykey", 0, 1000), s2.generate("mykey", 0, 1000));
+        QCOMPARE(s1.generateNormalized("mykey"), s2.generateNormalized("mykey"));
+    }
+
+    bool seedsDiffer = false;
+
+    for (int seed = 0; seed < 1000; seed++) {
+        KisPerStrokeRandomSource s1(seed);
+        KisPerStrokeRandomSource s2(seed + 1);
+
+        if (s1.generate("mykey", 0, 1000) != s2.generate("mykey", 0, 1000)) {
+            seedsDiffer = true;
+            break;
+        }
+    }
+
+    QVERIFY(seedsDiffer);
+}
+
 SIMPLE_TEST_MAIN(KisPerStrokeRandomSourceTest)

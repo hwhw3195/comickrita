@@ -223,6 +223,27 @@ public:
     void setLevelOfDetail(int levelOfDetail);
 
     /**
+     * Scales the dab size on top of the size option, so a stroke replayed from
+     * stored samples can be made thicker or thinner per sample (default 1.0).
+     * It is interpolated between samples like pressure.
+     */
+    qreal sizeMultiplier() const;
+    void setSizeMultiplier(qreal value);
+
+    /**
+     * Remaps the dab density (the opacity and flow the paintop computed for
+     * the dab, 0 to 1) to scale * value + offset, so a stroke replayed from
+     * stored samples can be made denser or lighter per sample. The default,
+     * scale 1 and offset 0, leaves it as the paintop made it. Both are
+     * interpolated between samples like pressure.
+     */
+    qreal densityScale() const;
+    qreal densityOffset() const;
+    void setDensity(qreal scale, qreal offset);
+    /// \p value remapped by the density, within 0 to 1; \p value unchanged with the default
+    qreal applyDensity(qreal value) const;
+
+    /**
      * The paint information may be generated not only during real
      * stroke when the actual painting is happening, but also when the
      * cursor is hovering the canvas. In this mode some of the sensors

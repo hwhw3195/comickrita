@@ -18,6 +18,7 @@
 #include "KoShapeMeshGradientHandles.h"
 #include <KoSvgTextPropertiesInterface.h>
 
+#include <QPainterPath>
 #include <QPolygonF>
 #include <QTime>
 #include <QCursor>
@@ -153,6 +154,7 @@ protected:
 
 protected:
     friend class SelectionInteractionStrategy;
+    friend class AreaSelectionStrategy;
     virtual bool isValidForCurrentLayer() const;
     virtual KoShapeManager *shapeManager() const;
     virtual KoSelection *koSelection() const;
@@ -209,6 +211,23 @@ private:
     friend class SelectionHandler;
 
     DefaultToolTabbedWidget *m_tabbedOptionWidget;
+
+    /// what a drag on empty canvas selects with
+    enum class SelectionShape { Rectangle, Ellipse, Lasso, Polygon };
+    SelectionShape m_selectionShape {SelectionShape::Rectangle};
+    /// a lasso or a polygon also takes what it only touches
+    bool m_selectionTouching {false};
+    QWidget *createSelectionShapeWidget();
+
+    /// selects the shapes fully inside \p area, or with \p contained false, touching it
+    void selectShapesIn(const QPainterPath &area, bool contained);
+
+    // a polygon stays open between clicks, so it isn't an interaction strategy
+    QPolygonF m_polygonPoints;
+    QPointF m_polygonNow;
+    QPainterPath polygonArea() const;
+    void finishPolygon();
+    void cancelPolygon();
 
     KisSignalMapper *m_alignSignalsMapper {0};
     KisSignalMapper *m_distributeSignalsMapper {0};

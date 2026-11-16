@@ -364,6 +364,9 @@ void KisSaveXmlVisitor::loadLayerAttributes(const QDomElement &el, KisLayer *lay
         KisShapeLayer *shapeLayer = static_cast<KisShapeLayer*>(layer);
         shapeLayer->setAntialiased(el.attribute(ANTIALIASED).toInt());
     }
+    if (layer->inherits("KisShapeLayer") && el.attribute(FREEHAND_VECTOR, "0") != "0") {
+        layer->setNodeProperty(FREEHAND_VECTOR, true);
+    }
 }
 
 void KisSaveXmlVisitor::saveNodeKeyframes(const KisNode* node, QString nodeFilename, QDomElement& nodeElement)
@@ -397,6 +400,9 @@ void KisSaveXmlVisitor::saveLayer(QDomElement & el, const QString & layerType, c
     if(layerType == SHAPE_LAYER) {
         const KisShapeLayer *shapeLayer = static_cast<const KisShapeLayer*>(layer);
         el.setAttribute(ANTIALIASED, shapeLayer->antialiased());
+        if (shapeLayer->nodeProperties().boolProperty(FREEHAND_VECTOR, false)) {
+            el.setAttribute(FREEHAND_VECTOR, 1);
+        }
     }
 
     if (layer->layerStyle()) {

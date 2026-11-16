@@ -18,6 +18,7 @@
 #include <QTransform>
 #include <QBuffer>
 #include <QHash>
+#include <QSet>
 #include <QFile>
 #include <QFileInfo>
 #include <KisMimeDatabase.h>
@@ -53,6 +54,7 @@ public:
 
     QHash<QString, int> uniqueNames;
     QHash<const KoShape*, QString> shapeIds;
+    QSet<QString> sharedDefinitions;
     QTransform userSpaceMatrix;
     bool saveInlineImages;
     bool strippedTextMode = false;
@@ -215,4 +217,13 @@ void SvgSavingContext::setStrippedTextMode(bool value)
 bool SvgSavingContext::strippedTextMode() const
 {
     return d->strippedTextMode;
+}
+
+bool SvgSavingContext::registerSharedDefinition(const QString &id)
+{
+    if (d->sharedDefinitions.contains(id)) {
+        return false;
+    }
+    d->sharedDefinitions.insert(id);
+    return true;
 }

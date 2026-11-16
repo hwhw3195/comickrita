@@ -5,6 +5,7 @@ kis_add_tests(
     TestKoProgressUpdater.cpp
     TestSqueezedComboBox.cpp
     kis_parse_spin_boxes_test.cpp
+    KisPopupButtonTest.cpp
     LINK_LIBRARIES kritawidgetutils kritaimage kritatestsdk
 )
 

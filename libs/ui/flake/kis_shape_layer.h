@@ -8,6 +8,8 @@
 #ifndef KIS_SHAPE_LAYER_H_
 #define KIS_SHAPE_LAYER_H_
 
+#include <functional>
+
 #include <KoShapeLayer.h>
 
 #include <kis_types.h>
@@ -16,6 +18,7 @@
 #include <KisDelayedUpdateNodeInterface.h>
 #include <KisCroppedOriginalLayerInterface.h>
 
+class QPainter;
 class QRect;
 class QIcon;
 class QRect;
@@ -176,6 +179,24 @@ public:
     bool antialiased() const;
     void setAntialiased(const bool antialiased);
 
+    /**
+     * Content painted over the layer's shapes, e.g. a stroke a tool is
+     * drawing that is not a shape yet. It is called from the rendering
+     * thread, with a painter in image pixels clipped to \p imageRect.
+     */
+    using LiveOverlay = std::function<void(QPainter &painter, const QRect &imageRect)>;
+
+    /**
+     * Replaces the live overlay (GUI thread only); an empty one removes it.
+     * Each repaint takes the overlay together with the shapes, so a shape
+     * replacing the overlay appears in the same repaint. Call
+     * updateLiveOverlay() for the area that changed.
+     */
+    void setLiveOverlay(const LiveOverlay &overlay);
+
+    /// repaints \p imageRect (image pixels) of the layer, e.g. after the live overlay changed
+    void updateLiveOverlay(const QRect &imageRect);
+
 protected:
     using KoShape::isVisible;
 
@@ -186,6 +207,7 @@ protected:
     const KoViewConverter *converter() const;
 
     KoShapeControllerBase *shapeController() const;
+    friend class KisShapeLayerHooks;
     KisShapeLayerCanvasBase *canvas() const;
 
     friend class TransformShapeLayerDeferred;

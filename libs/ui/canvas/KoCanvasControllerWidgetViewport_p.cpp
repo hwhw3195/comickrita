@@ -34,6 +34,9 @@
 #include "KoViewConverter.h"
 #include "KoSvgPaste.h"
 #include <kis_canvas2.h>
+#include <kis_shape_layer.h>
+#include "KisShapeLayerHooks.h"
+#include "KoSelectedShapesProxy.h"
 
 // ********** Viewport **********
 Viewport::Viewport(KoCanvasControllerWidget *parent)
@@ -189,6 +192,13 @@ void Viewport::handleDropEvent(QDropEvent *event)
     m_parent->canvas()->clipToDocument(m_draggedShape, newPos); // ensure the shape is dropped inside the document.
     m_draggedShape->setAbsolutePosition(newPos);
 
+    {
+        // a plugin may replace the shape for the layer it goes to
+        QList<KoShape*> shapes = {m_draggedShape};
+        KisShapeLayerHooks::convertShapes(shapes, dynamic_cast<KisShapeLayer*>(
+                                              m_parent->canvas()->selectedShapesProxy()->selection()->activeLayer()));
+        m_draggedShape = shapes.first();
+    }
 
     KUndo2Command * cmd = m_parent->canvas()->shapeController()->addShape(m_draggedShape, 0);
 

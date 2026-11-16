@@ -26,5 +26,5 @@ KisOpacityOption::KisOpacityOption(const KisPropertiesConfiguration *setting, Ki
 void KisOpacityOption::apply(KisPainter* painter, const KisPaintInformation& info) const
 {
     const qreal opacity = isChecked() ? computeSizeLikeValue(info, !m_indirectPaintingActive) : 1.0;
-    painter->setOpacityUpdateAverage(opacity);
+    painter->setOpacityUpdateAverage(info.applyDensity(opacity));
 }

@@ -8,6 +8,7 @@
 
 #include <KisCurveOption.h>
 #include "kis_properties_configuration.h"
+#include <kis_paint_information.h>
 
 #include <KisStandardOptionData.h>
 #include <KisSizeOptionData.h>
@@ -42,7 +43,17 @@ public:
 };
 
 using KisFlowOption = KisStandardOption<KisFlowOptionData>;
-using KisSizeOption = KisStandardOption<KisSizeOptionData>;
+
+class KisSizeOption : public KisStandardOption<KisSizeOptionData>
+{
+public:
+    using KisStandardOption<KisSizeOptionData>::KisStandardOption;
+
+    qreal apply(const KisPaintInformation & info) const
+    {
+        return KisStandardOption<KisSizeOptionData>::apply(info) * info.sizeMultiplier();
+    }
+};
 using KisRatioOption = KisStandardOption<KisRatioOptionData>;
 using KisRateOption = KisStandardOption<KisRateOptionData>;
 using KisSoftnessOption = KisStandardOption<KisSoftnessOptionData>;

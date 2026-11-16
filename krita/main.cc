@@ -34,6 +34,7 @@
 #include <QImageReader>
 
 #include <kaboutdata.h>
+#include <kconfig.h>
 
 #include <KisApplication.h>
 #include <KisMainWindow.h>
@@ -242,8 +243,18 @@ extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
     // Workaround a bug in QNetworkManager
     qputenv("QT_BEARER_POLL_TIMEOUT", QByteArray::number(-1));
 
+    // comicKrita: its own settings file and its own data folders
+    // (<AppData>/comicKrita/krita, the cache likewise), so a stock Krita on
+    // the same machine keeps its settings, resources and resource database
+    // to itself. The application name stays "krita": installed data, the
+    // .xmlgui files and the translations are looked up by it.
+    // Still shared with a stock Krita: kritadisplayrc and the log files.
+    QCoreApplication::setOrganizationName(QStringLiteral("comicKrita"));
+    KConfig::setMainConfigName(QStringLiteral("comickritarc"));
+
     // A per-user unique string, without /, because QLocalServer cannot use names with a / in it
-    QString key = "Krita5" + QStandardPaths::writableLocation(QStandardPaths::HomeLocation).replace("/", "_");
+    // (comicKrita: its own key, so it runs beside a stock Krita)
+    QString key = "comicKrita5" + QStandardPaths::writableLocation(QStandardPaths::HomeLocation).replace("/", "_");
     key = key.replace(":", "_").replace("\\","_");
 
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts, true);
@@ -716,9 +727,9 @@ if (!qEnvironmentVariableIsEmpty("KRITA_OPENGL_DEBUG")) {
     /// Initialize application info, it will be used by both, Qt and
     /// DrKonqi of the host system
     KAboutData aboutData("krita",
-                            "Krita",
+                            QStringLiteral("comicKrita"),
                             KritaVersionWrapper::versionString(true),
-                            "", // TODO: "short description" needs new string exception
+                            i18n("comicKrita is an unofficial fork of Krita, the full-featured digital art studio"),
                             KAboutLicense::GPL,
                             i18nc("@info:credit", "© 1999–2026 The Krita Developers"));
     aboutData.setHomepage(QStringLiteral("https://krita.org"));
@@ -729,8 +740,9 @@ if (!qEnvironmentVariableIsEmpty("KRITA_OPENGL_DEBUG")) {
 
     // Note: Qt docs suggest we set organization name, but if we do, we get resource
     // paths of the form of krita/krita, which is weird.
-    KIS_SAFE_ASSERT_RECOVER(app.organizationName().isEmpty()) {
-        app.setOrganizationName("");
+    // comicKrita: the organization name is set on purpose, see the top of main()
+    KIS_SAFE_ASSERT_RECOVER(app.organizationName() == QLatin1String("comicKrita")) {
+        app.setOrganizationName(QStringLiteral("comicKrita"));
     }
 
 #ifdef Q_OS_WIN

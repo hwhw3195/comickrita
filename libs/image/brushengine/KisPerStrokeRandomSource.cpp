@@ -45,6 +45,11 @@ KisPerStrokeRandomSource::KisPerStrokeRandomSource()
 
 }
 
+KisPerStrokeRandomSource::KisPerStrokeRandomSource(int seed)
+    : m_d(new Private(seed))
+{
+}
+
 KisPerStrokeRandomSource::KisPerStrokeRandomSource(const KisPerStrokeRandomSource &rhs)
     : KisShared(),
       m_d(new Private(*rhs.m_d))
@@ -81,5 +86,10 @@ int KisPerStrokeRandomSource::generate(const QString &key, int min, int max) con
 qreal KisPerStrokeRandomSource::generateNormalized(const QString &key) const
 {
     return qreal(m_d->fetchInt(key)) / m_d->generatorMax;
+}
+
+int KisPerStrokeRandomSource::seed() const
+{
+    return m_d->seed;
 }
 

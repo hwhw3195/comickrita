@@ -51,6 +51,7 @@ set(kritaflake_SRCS
     KoSelectedShapesProxy.cpp
     KoSelectedShapesProxySimple.cpp
     KoShape.cpp
+    KoStrokeFeatures.cpp
     KoShapeAnchor.cpp
     KoShapeBulkActionLock.cpp
     KoShapeControllerBase.cpp

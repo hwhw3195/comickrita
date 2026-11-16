@@ -12,6 +12,7 @@
 #include <kis_stroke_strategy_undo_command_based.h>
 #include <kis_types.h>
 #include "tool_transform_args.h"
+#include "kis_vector_transform_pass.h"
 #include <kritatooltransform_export.h>
 
 #include <transform_transaction_properties.h>
@@ -133,6 +134,9 @@ public:
 
     ~InplaceTransformStrokeStrategy() override;
 
+    /// the transform tool's Fast preview, for the vector layers a plugin moves (KisVectorTransformPass); before the stroke starts
+    void setVectorFastPreview(bool fast);
+
     void initStrokeCallback() override;
     void finishStrokeCallback() override;
     void cancelStrokeCallback() override;
@@ -165,6 +169,21 @@ private:
     void fetchAllUpdateRequests(int levelOfDetail, KisBatchNodeUpdateSP updateData);
 
     void transformNode(KisNodeSP node, const ToolTransformArgs &config, int levelOfDetail);
+    /// whether the incremental Liquify preview repaints \p node in bands
+    bool isLiquifyBandNode(KisNodeSP node, const ToolTransformArgs &args) const;
+    /// band \p band of \p bands of a paint layer's Liquify preview pass
+    void transformLiquifyBand(KisNodeSP node, const ToolTransformArgs &config, int levelOfDetail, int band, int bands);
+    /**
+     * Ends the run of incremental Liquify passes at \p levelOfDetail: each
+     * paint layer's transaction becomes one command, among the last pass's.
+     * Before a full pass, the stroke's end or its cancel. Barriers only.
+     */
+    void endLiquifyRun(int levelOfDetail);
+    /// endLiquifyRun() at every level of detail
+    void endLiquifyRuns();
+    KUndo2Command *disableDirtyRequestsCommand(KisCommandUtils::FlipFlopCommand::State state);
+    /// how a pass keeps what KisVectorTransformPass does with \p node
+    KisVectorTransformPass::Sink vectorSink(KisNodeSP node, CommandGroup group, int levelOfDetail);
     void createCacheAndClearNode(KisNodeSP node);
     void reapplyTransform(ToolTransformArgs args, QVector<KisStrokeJobData *> &mutatedJobs, int levelOfDetail, bool useHoldUI);
     void finalizeStrokeImpl(QVector<KisStrokeJobData *> &mutatedJobs, bool saveCommands);

@@ -19,6 +19,7 @@
 #include "KisToolChangesTrackerData.h"
 #include "KisBezierTransformMesh.h"
 #include "kis_paint_device.h"
+#include "KisShapeLayerHooks.h"
 
 #include <memory>
 
@@ -80,6 +81,8 @@ public:
 
     bool operator==(const ToolTransformArgs& other) const;
     bool isSameMode(const ToolTransformArgs& other) const;
+    /// both are Liquify with the same deformation, whatever their brush settings
+    bool isSameLiquifyDeformation(const ToolTransformArgs& other) const;
 
     inline TransformMode mode() const {
         return m_mode;
@@ -222,6 +225,12 @@ public:
     }
     void setTransformAroundRotationCenter(bool value);
 
+    /// Free Transform: brush strokes on vector layers scale their brush size too (KisShapeLayerHooks)
+    inline bool scaleBrushSizes() const {
+        return m_scaleBrushSizes;
+    }
+    void setScaleBrushSizes(bool value);
+
     inline void setAX(double aX) {
         m_aX = aX;
     }
@@ -303,6 +312,20 @@ public:
         return m_liquifyWorker.data();
     }
 
+    /**
+     * The Move and Offset dabs of the Liquify stroke, in full resolution
+     * image pixels (level of detail scaling leaves them alone), for the
+     * vector layers Liquify moves through KisShapeLayerHooks. Shared
+     * copy-on-write with copies of the arguments; not saved.
+     */
+    const QVector<KisShapeLayerHooks::LiquifyDab> &liquifyDabs() const {
+        return m_liquifyDabs;
+    }
+
+    QVector<KisShapeLayerHooks::LiquifyDab> *liquifyDabsForWrite() {
+        return &m_liquifyDabs;
+    }
+
     void toXML(QDomElement *e) const;
     static ToolTransformArgs fromXML(const QDomElement &e);
 
@@ -363,6 +386,7 @@ private:
     double m_shearY {0.0};
     double m_boundsRotation {0.0};
     bool m_keepAspectRatio {false};
+    bool m_scaleBrushSizes {false};
 
     // perspective transform related
     QTransform m_flattenedPerspectiveTransform;
@@ -371,6 +395,7 @@ private:
     bool m_editTransformPoints {false};
     QSharedPointer<KisLiquifyProperties> m_liquifyProperties;
     QScopedPointer<KisLiquifyTransformWorker> m_liquifyWorker;
+    QVector<KisShapeLayerHooks::LiquifyDab> m_liquifyDabs;
 
     KisBezierTransformMesh m_meshTransform;
     bool m_meshShowHandles = true;

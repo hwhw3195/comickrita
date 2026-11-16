@@ -1,0 +1,9 @@
+{
+    "Id": "Freehand Vector Layer Actions",
+    "Type": "Service",
+    "X-KDE-Library": "kritavstrokeactions",
+    "X-KDE-ServiceTypes": [
+        "Krita/ViewPlugin"
+    ],
+    "X-Krita-Version": "28"
+}

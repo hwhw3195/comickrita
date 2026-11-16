@@ -21,6 +21,8 @@
 #include <KoPathShape.h>
 #include <KoShapeController.h>
 #include <KoShapeStroke.h>
+#include <KisShapeLayerHooks.h>
+#include <kis_shape_layer.h>
 
 #include <kis_debug.h>
 #include <kis_cursor.h>
@@ -374,7 +376,11 @@ void KisToolLine::endStroke()
         KoShapeStrokeSP border(new KoShapeStroke(currentStrokeWidth(), resources.currentFgColor().toQColor()));
         path->setStroke(border);
 
-        KUndo2Command * cmd = canvas()->shapeController()->addShape(path, nullptr);
+        // a plugin may replace the shape for the layer it goes to
+        QList<KoShape*> shapes = {path};
+        KisShapeLayerHooks::convertShapes(shapes, dynamic_cast<KisShapeLayer*>(currentNode().data()));
+
+        KUndo2Command * cmd = canvas()->shapeController()->addShape(shapes.first(), nullptr);
         canvas()->addCommand(cmd);
     }
 

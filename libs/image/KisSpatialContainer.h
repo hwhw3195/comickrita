@@ -47,9 +47,26 @@ public:
     void addPoint(int index, QPointF position);
     void removePoint(int index, QPointF position);
     void movePoint(int index, QPointF positionBefore, QPointF positionAfter);
+    /**
+     * movePoint() for each of \p indexes in turn, leaving the same tree.
+     * Faster for many points in few leaves, in the order findAllInRange()
+     * gives them: each point is looked for in its leaf from where the last
+     * one was found, instead of from the leaf's start.
+     */
+    void movePoints(const QVector<int> &indexes, const QVector<QPointF> &positionsBefore, const QVector<QPointF> &positionsAfter);
     QVector<QPointF> toVector();
 
     void findAllInRange(QVector<int> &indexes, QPointF center, qreal range);
+
+    /**
+     * Scales every point, and the tree with them, keeping its structure: one
+     * pass, instead of a removal and an addition per point with movePoint().
+     * Only for scales that are positive powers of two (see isExactScale()):
+     * they map coordinates exactly, so every point stays on the same side of
+     * each partition.
+     */
+    void scaleExactly(qreal sx, qreal sy);
+    static bool isExactScale(qreal scale);
 
     int count();
     // O(log(n)*m_maxPointsInDict)
@@ -86,6 +103,7 @@ private:
     void initializeWithGridPointsRec(QRectF gridRect, int pixelPrecision, SpatialNode* node, int startRow, int startColumn, int columnCount);
 
     void clearRec(SpatialNode* node);
+    void scaleExactlyRec(SpatialNode* node, qreal sx, qreal sy);
 
     void deepCopyData(SpatialNode* node, const SpatialNode* from);
 

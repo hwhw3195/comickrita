@@ -37,6 +37,7 @@
 #include <KoShapeSavingContext.h>
 #include <KoStore.h>
 #include <KoShapeControllerBase.h>
+#include <KisShapeLayerHooks.h>
 #include <KoStoreDevice.h>
 #include <KoViewConverter.h>
 #include <KoXmlNS.h>
@@ -102,14 +103,29 @@ public:
         SimpleShapeContainerModel::remove(child);
     }
 
-    void setResolution(qreal xRes, qreal yRes) {
+    bool setResolution(qreal xRes, qreal yRes) {
         if (!qFuzzyCompare(m_xRes, xRes) || !qFuzzyCompare(m_yRes, yRes)) {
             m_xRes = xRes;
             m_yRes = yRes;
             Q_FOREACH (KoShape *shape, shapes()) {
                 shape->setResolution(xRes, yRes);
             }
+            return true;
         }
+        return false;
+    }
+
+    /**
+     * Starts at the resolution of \p rhs, the model of the layer being
+     * copied. The copied canvas already holds the pixels rendered at that
+     * resolution; a resolution change would clear them before the shapes
+     * are added back with the updates blocked, leaving the copy empty.
+     */
+    void initResolutionFrom(const KoShapeContainerModel *rhs) {
+        const ShapeLayerContainerModel *model = dynamic_cast<const ShapeLayerContainerModel*>(rhs);
+        KIS_SAFE_ASSERT_RECOVER_RETURN(model);
+        m_xRes = model->m_xRes;
+        m_yRes = model->m_yRes;
     }
 
 private:
@@ -171,6 +187,7 @@ KisShapeLayer::KisShapeLayer(const KisShapeLayer& _rhs, KoShapeControllerBase* c
         , KoShapeLayer(new ShapeLayerContainerModel(this)) //no _rhs here otherwise both layer have the same KoShapeContainerModel
         , m_d(new Private())
 {
+    static_cast<ShapeLayerContainerModel*>(model())->initResolutionFrom(_rhs.model());
     initShapeLayerImpl(controller, canvasFactory());
     m_d->isAntialiased = _rhs.m_d->isAntialiased;
 
@@ -204,6 +221,7 @@ KisShapeLayer::KisShapeLayer(const KisShapeLayer& baseTemplate, const QList<KoSh
 
     const KisShapeLayerCanvas* shapeLayerCanvas = dynamic_cast<const KisShapeLayerCanvas*>(baseTemplate.canvas());
     KIS_ASSERT(shapeLayerCanvas);
+    static_cast<ShapeLayerContainerModel*>(model())->initResolutionFrom(baseTemplate.model());
     initShapeLayerImpl(baseTemplate.m_d->controller, new KisShapeLayerCanvas(*shapeLayerCanvas, this));
 
     /**
@@ -403,7 +421,8 @@ void KisShapeLayer::setParent(KoShapeContainer *parent)
 
 QIcon KisShapeLayer::icon() const
 {
-    return KisIconUtils::loadIcon("vectorLayer");
+    const QString name = KisShapeLayerHooks::layerIcon(this);
+    return KisIconUtils::loadIcon(name.isEmpty() ? QStringLiteral("vectorLayer") : name);
 }
 
 KisPaintDeviceSP KisShapeLayer::original() const
@@ -797,12 +816,26 @@ KisShapeLayerCanvasBase *KisShapeLayer::canvas() const
     return m_d->canvas;
 }
 
+void KisShapeLayer::setLiveOverlay(const LiveOverlay &overlay)
+{
+    KisShapeLayerCanvas *canvas = dynamic_cast<KisShapeLayerCanvas*>(m_d->canvas);
+    KIS_SAFE_ASSERT_RECOVER_RETURN(canvas);
+    canvas->setLiveOverlay(overlay);
+}
+
+void KisShapeLayer::updateLiveOverlay(const QRect &imageRect)
+{
+    m_d->canvas->updateCanvas(m_d->canvas->viewConverter()->viewToDocument(QRectF(imageRect)));
+}
+
 void KisShapeLayer::slotImageResolutionChanged()
 {
     ShapeLayerContainerModel *model = dynamic_cast<ShapeLayerContainerModel*>(this->model());
     KIS_SAFE_ASSERT_RECOVER_RETURN(model);
     if (this->image()) {
-        model->setResolution(image()->xRes() * 72.0, image()->yRes() * 72.0);
+        if (model->setResolution(image()->xRes() * 72.0, image()->yRes() * 72.0)) {
+            resetCache(nullptr);
+        }
     }
 }
 

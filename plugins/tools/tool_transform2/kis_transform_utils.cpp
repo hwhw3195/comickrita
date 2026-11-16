@@ -30,6 +30,7 @@
 #include "kis_selection.h"
 #include "kis_image.h"
 #include "kis_image_animation_interface.h"
+#include "kis_vector_deform_maps.h"
 
 const int KisTransformUtils::rotationHandleVisualRadius = 12;
 const int KisTransformUtils::rotationHandleRadius = 8;
@@ -552,13 +553,67 @@ ToolTransformArgs KisTransformUtils::resetArgsForMode(ToolTransformArgs::Transfo
     return args;
 }
 
+bool KisTransformUtils::isVectorDeformMode(ToolTransformArgs::TransformMode mode)
+{
+    // the modes that send every point of the image somewhere (Vector Transform Modes plan)
+    return mode == ToolTransformArgs::PERSPECTIVE_4POINT || mode == ToolTransformArgs::WARP ||
+           mode == ToolTransformArgs::CAGE || mode == ToolTransformArgs::MESH;
+}
+
+bool KisTransformUtils::isVectorDeformTarget(ToolTransformArgs::TransformMode mode, const KisNode *node)
+{
+    return isVectorDeformMode(mode) && node && node->inherits("KisShapeLayer") && KisShapeLayerHooks::isDeformTarget(node);
+}
+
+bool KisTransformUtils::vectorForcesFullResolution(ToolTransformArgs::TransformMode mode, const KisNode *node)
+{
+    if (!node) return false;
+    if (mode == ToolTransformArgs::LIQUIFY && KisShapeLayerHooks::isLiquifyTarget(node)) return true;
+    if (isVectorDeformTarget(mode, node)) return true;
+    // a reduced preview of a vector layer holding brush strokes scales its
+    // pixels, brush size and all; at full resolution the strokes keep their
+    // brush size unless "Scale brush size" is on
+    return (mode == ToolTransformArgs::FREE_TRANSFORM || mode == ToolTransformArgs::PERSPECTIVE_4POINT) &&
+           KisShapeLayerHooks::hasBrushSizes(node);
+}
+
+KisShapeLayerHooks::DeformMap KisTransformUtils::vectorDeformMap(const ToolTransformArgs &args, KisSelectionSP selection)
+{
+    KisShapeLayerHooks::DeformMap result;
+    if (args.mode() == ToolTransformArgs::WARP) {
+        result = KisVectorDeformMaps::warp(args.warpType(), args.origPoints(), args.transfPoints(), args.alpha());
+    } else if (args.mode() == ToolTransformArgs::CAGE) {
+        result = KisVectorDeformMaps::cage(args.origPoints(), args.transfPoints(), args.isEditingTransformPoints());
+    } else if (args.mode() == ToolTransformArgs::MESH) {
+        result = KisVectorDeformMaps::mesh(*args.meshTransform());
+    } else if (args.mode() == ToolTransformArgs::PERSPECTIVE_4POINT) {
+        const QTransform t = MatricesPack(args).finalTransform();
+        result.map = [t] (const QPointF &p) { return t.map(p); };
+        result.mapAll = [t] (const QVector<QPointF> &points, QVector<QPointF> &mapped) {
+            mapped.resize(points.size());
+            for (int i = 0; i < points.size(); i++) mapped[i] = t.map(points[i]);
+        };
+    } else {
+        KIS_SAFE_ASSERT_RECOVER_NOOP(!isVectorDeformMode(args.mode()));
+        result.map = [] (const QPointF &p) { return p; };
+        result.identity = true;
+    }
+    result.selection = selection;
+    result.scaleBrushSizes = args.scaleBrushSizes();
+    return result;
+}
+
 bool KisTransformUtils::shouldRestartStrokeOnModeChange(ToolTransformArgs::TransformMode oldMode, ToolTransformArgs::TransformMode newMode, KisNodeList processedNodes)
 {
     bool hasExternalLayers = false;
+    bool hasLiquifyTargets = false;
+    bool hasDeformTargets = false;
     Q_FOREACH (KisNodeSP node, processedNodes) {
         if (node->inherits("KisShapeLayer")) {
             hasExternalLayers = true;
-            break;
+            // vector layers Liquify and the deforming modes move by themselves (KisShapeLayerHooks)
+            hasLiquifyTargets |= KisShapeLayerHooks::isLiquifyTarget(node.data());
+            hasDeformTargets |= KisShapeLayerHooks::isDeformTarget(node.data());
         }
     }
 
@@ -568,6 +623,14 @@ bool KisTransformUtils::shouldRestartStrokeOnModeChange(ToolTransformArgs::Trans
         result =
             (oldMode == ToolTransformArgs::FREE_TRANSFORM) !=
             (newMode == ToolTransformArgs::FREE_TRANSFORM);
+    }
+    if (hasLiquifyTargets) {
+        result |=
+            (oldMode == ToolTransformArgs::LIQUIFY) !=
+            (newMode == ToolTransformArgs::LIQUIFY);
+    }
+    if (hasDeformTargets) {
+        result |= isVectorDeformMode(oldMode) != isVectorDeformMode(newMode);
     }
 
     return result;
@@ -690,7 +753,9 @@ QList<KisNodeSP> KisTransformUtils::fetchNodesList(ToolTransformArgs::TransformM
         auto fetchFunc =
             [&result, mode, root, selectionNode] (KisNodeSP node) {
             if (node->isEditable(node == root) &&
-                    (!node->inherits("KisShapeLayer") || mode == ToolTransformArgs::FREE_TRANSFORM) &&
+                    (!node->inherits("KisShapeLayer") || mode == ToolTransformArgs::FREE_TRANSFORM ||
+                     (mode == ToolTransformArgs::LIQUIFY && KisShapeLayerHooks::isLiquifyTarget(node.data())) ||
+                     isVectorDeformTarget(mode, node.data())) &&
                     !node->inherits("KisFileLayer") &&
                     !node->inherits("KisColorizeMask") &&
                     (!node->inherits("KisTransformMask") || node == root) &&

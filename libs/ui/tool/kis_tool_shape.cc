@@ -5,6 +5,8 @@
  */
 
 #include "kis_tool_shape.h"
+#include "KisShapeLayerHooks.h"
+#include "kis_shape_layer.h"
 
 #include <QWidget>
 #include <QLayout>
@@ -226,6 +228,13 @@ void KisToolShape::addShape(KoShape* shape)
         shape->setStroke(stroke);
         break;
     }
+    }
+
+    {
+        // a plugin may replace the shape for the layer it goes to
+        QList<KoShape*> shapes = {shape};
+        KisShapeLayerHooks::convertShapes(shapes, dynamic_cast<KisShapeLayer*>(currentNode().data()));
+        shape = shapes.first();
     }
 
     KUndo2Command *parentCommand = new KUndo2Command();

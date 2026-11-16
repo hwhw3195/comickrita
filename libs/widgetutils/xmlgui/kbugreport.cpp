@@ -154,11 +154,12 @@ KisKBugReport::KisKBugReport(const KAboutData &aboutData, QWidget *_parent)
     // Point to the web form
 
     lay->addSpacing(10);
+    // comicKrita: bugs of the fork go to the fork, not to Krita's bug tracker
     QString text = i18n("<qt>"
-                        "<p>Please read <b><a href=\"https://docs.krita.org/en/untranslatable_pages/reporting_bugs.html\">this guide</a></b> for reporting bugs first!</p>"
+                        "<p>comicKrita is an unofficial fork of Krita. <b>Please do not report its bugs to the Krita developers.</b></p>"
                         "<p>To submit a bug report, click on the button below. This will open a web browser "
-                        "window on <a href=\"https://bugs.kde.org\">https://bugs.kde.org</a> where you will find "
-                        "a form to fill in. </p>"
+                        "window on <a href=\"https://github.com/hwhw3195/comicKrita/issues\">https://github.com/hwhw3195/comicKrita/issues</a> "
+                        "where you can describe the problem. </p>"
                         "<p><b>Please paste the following information into the bug report!</b></p>"
                         "</qt>");
     QLabel *label = new QLabel(text, this);
@@ -214,26 +215,8 @@ KisKBugReport::~KisKBugReport()
 
 void KisKBugReportPrivate::_k_updateUrl()
 {
-    url = QUrl(QStringLiteral("https://bugs.kde.org/enter_bug.cgi"));
-    QUrlQuery query;
-    query.addQueryItem(QStringLiteral("format"), QLatin1String("guided"));    // use the guided form
-
-    // the string format is product/component, where component is optional
-    QStringList list = QStringList() << appname;
-    query.addQueryItem(QStringLiteral("product"), list[0]);
-    if (list.size() == 2) {
-        query.addQueryItem(QStringLiteral("component"), list[1]);
-    }
-
-    query.addQueryItem(QStringLiteral("version"), m_strVersion);
-
-    // TODO: guess and fill OS(sys_os) and Platform(rep_platform) fields
-#ifdef Q_OS_WIN
-    query.addQueryItem(QStringLiteral("op_sys"), QStringLiteral("MS Windows"));
-    query.addQueryItem(QStringLiteral("rep_platform"), QStringLiteral("MS Windows"));
-#endif
-
-    url.setQuery(query);
+    // comicKrita: the fork's issue page; Krita's bug tracker takes no reports about forks
+    url = QUrl(QStringLiteral("https://github.com/hwhw3195/comicKrita/issues/new"));
 }
 
 void KisKBugReport::accept()

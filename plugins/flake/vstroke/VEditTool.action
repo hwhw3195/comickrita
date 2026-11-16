@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ActionCollection version="2" name="Tools">
+  <Actions category="tool-shortcuts">
+  <text>Tool Shortcuts</text>
+    <Action name="VEditTool">
+      <icon>snap-intersection</icon>
+      <text>Vector Edit Tool</text>
+      <whatsThis></whatsThis>
+      <toolTip>Vector Edit Tool</toolTip>
+      <iconText>Vector Edit Tool</iconText>
+      <shortcut></shortcut>
+      <isCheckable>false</isCheckable>
+      <statusTip></statusTip>
+    </Action>
+    <Action name="VEditToolSmooth">
+      <icon>snap-intersection</icon>
+      <text>Vector Edit Tool (Smooth)</text>
+      <whatsThis></whatsThis>
+      <toolTip></toolTip>
+      <iconText></iconText>
+      <shortcut></shortcut>
+      <isCheckable>false</isCheckable>
+      <statusTip></statusTip>
+    </Action>
+    <Action name="VEditToolThickness">
+      <icon>snap-intersection</icon>
+      <text>Vector Edit Tool (Thickness)</text>
+      <whatsThis></whatsThis>
+      <toolTip></toolTip>
+      <iconText></iconText>
+      <shortcut></shortcut>
+      <isCheckable>false</isCheckable>
+      <statusTip></statusTip>
+    </Action>
+    <Action name="VEditToolOpacity">
+      <icon>snap-intersection</icon>
+      <text>Vector Edit Tool (Opacity/Density)</text>
+      <whatsThis></whatsThis>
+      <toolTip></toolTip>
+      <iconText></iconText>
+      <shortcut></shortcut>
+      <isCheckable>false</isCheckable>
+      <statusTip></statusTip>
+    </Action>
+    <Action name="VEditToolTrim">
+      <icon>snap-intersection</icon>
+      <text>Vector Edit Tool (Trim)</text>
+      <whatsThis></whatsThis>
+      <toolTip></toolTip>
+      <iconText></iconText>
+      <shortcut></shortcut>
+      <isCheckable>false</isCheckable>
+      <statusTip></statusTip>
+    </Action>
+    <Action name="VEditToolSimplify">
+      <icon>snap-intersection</icon>
+      <text>Vector Edit Tool (Simplify)</text>
+      <whatsThis></whatsThis>
+      <toolTip></toolTip>
+      <iconText></iconText>
+      <shortcut></shortcut>
+      <isCheckable>false</isCheckable>
+      <statusTip></statusTip>
+    </Action>
+    <Action name="VEditToolSubdivide">
+      <icon>snap-intersection</icon>
+      <text>Vector Edit Tool (Subdivide)</text>
+      <whatsThis></whatsThis>
+      <toolTip></toolTip>
+      <iconText></iconText>
+      <shortcut></shortcut>
+      <isCheckable>false</isCheckable>
+      <statusTip></statusTip>
+    </Action>
+  </Actions>
+</ActionCollection>

@@ -8,6 +8,9 @@
 #define __KIS_LIQUIFY_PAINTOP_H
 
 #include <QScopedPointer>
+#include <QVector>
+
+#include "KisShapeLayerHooks.h"
 
 class KisLiquifyTransformWorker;
 class KisPaintInformation;
@@ -21,8 +24,12 @@ class QPainterPath;
 class KisLiquifyPaintop
 {
 public:
+    /// \p dabs, when set, collects the Move and Offset dabs for the vector layers Liquify moves;
+    /// without \p moveGrid, those dabs leave \p worker's grid alone: nothing reads it
     KisLiquifyPaintop(const KisLiquifyProperties &props,
-                      KisLiquifyTransformWorker *worker);
+                      KisLiquifyTransformWorker *worker,
+                      QVector<KisShapeLayerHooks::LiquifyDab> *dabs = nullptr,
+                      bool moveGrid = true);
     ~KisLiquifyPaintop();
 
     KisSpacingInformation paintAt(const KisPaintInformation &pi);
@@ -42,6 +49,9 @@ public:
     KisTimingInformation updateTimingImpl(const KisPaintInformation &pi) const;
 
     static QPainterPath brushOutline(const KisLiquifyProperties &props, const KisPaintInformation &info);
+
+    /// how far from the brush's center a dab of \p props moves anything, in image pixels
+    static qreal effectReach(const KisLiquifyProperties &props);
 
 protected:
     KisSpacingInformation updateSpacingImpl(const KisPaintInformation &pi) const;

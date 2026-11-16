@@ -1,0 +1,9 @@
+{
+    "Id": "CSP Brush",
+    "Type": "Service",
+    "X-KDE-Library": "kritacspbrushpaintop",
+    "X-KDE-ServiceTypes": [
+        "Krita/Paintop"
+    ],
+    "X-Krita-Version": "28"
+}

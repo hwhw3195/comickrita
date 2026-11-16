@@ -221,6 +221,7 @@ struct PaintDevicePolygonOp
         //m_rectId++;
 #endif
         QRect boundRect = clipDstPolygon.boundingRect().toAlignedRect();
+        if (!m_iterationLimit.isEmpty()) boundRect &= m_iterationLimit;
         if (boundRect.isEmpty()) return;
 
         bool samePolygon = (m_dstDev->colorSpace() == m_srcDev->colorSpace())
@@ -346,8 +347,14 @@ struct PaintDevicePolygonOp
     }
 #endif
 
+    /// The iterator stays in this rect: it locks whole tiles for writing, even those it paints nothing in
+    void setIterationLimit(const QRect &limit) {
+        m_iterationLimit = limit;
+    }
+
 private:
     bool m_canMergeRects {false};
+    QRect m_iterationLimit;
     QVector<QRect> m_rectsToCopy;
 
 };

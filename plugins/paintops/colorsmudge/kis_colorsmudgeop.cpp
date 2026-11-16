@@ -201,7 +201,7 @@ KisSpacingInformation KisColorSmudgeOp::paintAt(const KisPaintInformation& info)
     const qreal colorRate = m_colorRateOption.isChecked() ? m_colorRateOption.computeSizeLikeValue(info) : 0.0;
     const qreal smudgeRate = m_smudgeRateOption.isChecked() ? m_smudgeRateOption.computeSizeLikeValue(info) : 1.0;
     const qreal maxSmudgeRate = m_smudgeRateOption.strengthValue();
-    const qreal fpOpacity = m_opacityOption.apply(info);
+    const qreal fpOpacity = info.applyDensity(m_opacityOption.apply(info));
 
     KoColor paintColor = m_paintColor;
 

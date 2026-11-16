@@ -1,113 +1,69 @@
-![Picture](https://krita.org/images/krita-logo-light.svg)
+This is a custom build of Krita that adds many features from Clip Studio Paint (CSP) that are useful for comics! I built this for my own personal use and it will be maintained for as long as I use it. This project and I are not affiliated with the official Krita development team at all.
 
-| CI Name     | Master | Stable | Release |
-| ------------------- | ---------------- | ------ | ------- |
-| Pipeline | [![pipeline status](https://invent.kde.org/graphics/krita/badges/master/pipeline.svg)](https://invent.kde.org/graphics/krita/-/commits/master) | [![pipeline status](https://invent.kde.org/graphics/krita/badges/krita/5.2/pipeline.svg)](https://invent.kde.org/graphics/krita/-/commits/krita/5.2) | [![Latest Release](https://invent.kde.org/graphics/krita/-/badges/release.svg)](https://invent.kde.org/graphics/krita/-/releases) |
+Please do **not** report problems with comicKrita to Krita's bug tracker; report them to this repository.
 
-Note: Nightly builds are not covered by this table atm
+## Overview
+This custom build adds the following:
+* Ribbon brushes, as part of a rudimentary CSP-like brush engine
+* Draw on vector layer with freehand brush with varying thickness
+* Various vector line edit tools (like erase to crossings) based on above
+* Small QoL UI/UX tweaks
 
-Krita is a free and open source digital painting application. It is for artists who want to create professional work from start to end. Krita is used by comic book artists, illustrators, concept artists, matte and texture painters and in the digital VFX industry.
+See below for more details.
 
-If you are reading this on GitHub, be aware that this is just a mirror. Our real code repository is provided by KDE: https://invent.kde.org/graphics/krita.git
+## Freehand Vectors
+* Create a **freehand vector layer** to start using it. Works with freehand brushes and vector line/shape tools. 
+* Use **Select Shapes** for whole stroke edits and **Edit Shapes** for point-by-point edits.
+* Each point has a thickness radius. in Edit shapes mode, you can select a point and ctrl+drag up or down to increase or reduce radius. Options in the Edit Shapes panel apply either on the whole layer (default if no selection) or on selected vector points. 
+* You can change the brush preset with which the vector stroke is drawn using Edit Shape tool's "Brush" option. It always applies to the whole stroke. Note that it may not look the same as the real brush stroke b/c not all of the brush parameters is saved in vector.
+* Use Vector Edit Tool for a brush-like area edit tool.
+	* For thickness and opacity/density, pressing ctrl inverts the direction (e.g. thicken becomes thin, decrease opacity becomes increase opacity)
+	* Trim is like CSP's vector eraser. You can erase whole strokes, only to crossings. or specific areas only.
+		* Keep Caps preserves round caps, and won't be noticeable unless you use a polyline vector tool. Keep Fills likewise only works on polyline vector shapes (freehand brush strokes do not have a fill).
+	* Smooth, Simplify, and Subdivide smooths points, simplifies strokes by removing/merging points, or adds points, respectively.
+* **IMPORTANT!!!** If you save the file you worked on with the custom build with stock Krita, the freehand vector format will be **DESTROYED**. The file can still be opened and edited, but the vectors will be flattened into stock vectors and will not work with the freehand vector tools.
+* Limitations:
+	* Only works with pixel and CSP brush engines.
+	* Color mixing does not work on vector layers.
+	* Does not support fills (stroke and fill will be the same color) or gradients. Caps also won't really show up visually. 
 
-![Picture](https://krita.org/images/hero-image-50.webp)
+## CSP Paintop (including Ribbon Function)
+* A CSP-like paint engine. Expect some rough edges; do NOT expect a 1:1 replication of CSP brush behaviors.
+* Brush is slow at large sizes, especially with color mixing.
+* Supports the following
+	* CSP style pressure/tilt/speed curve, plus couple of Krita's like fade
+	* Perceptual color mixing
+	* Ribbon brush 
+	* Dual color in image tips in greyscale
+	* Color Jitter, Spraying Effect, Texture
+	* Watercolor Edge
+* You can use the python converter plugin (sut2kpp) to import sut brushes. Note that the converter was based on sut brushes exported from CSP v3. 
+* **Only convert brushes you own or have permission to use.** Converting a brush does not change its license. Brushes made by other people stay under their creators' terms, and sharing converted copies may violate those terms. You are responsible for following the license of any brush you convert. 
 
-### Repository Status
+## UI/UX changes
+* Setting to toggle snap to brush increment sizes without holding ctrl
+* Setting to show the full reach of liquify brushes (stock Krita's falloff circle is smaller than the full effect area)
+* Undo after one liquify dab doesn't undo size changes to liquify falloff. Liquify is also a little bit faster.
+* Shape select can use ellipse, lasso, and polygon selection besides rectangle. You can also toggle to select shapes it touches (instead of encompasses).
 
-For branch: `master`
+## Using with Stock Krita
 
-| Freeze type    | Status                                                               |
-|----------------|----------------------------------------------------------------------|
-| Feature Freeze | freeze, features are not allowed                                     |
-| String Freeze  | freeze, strings are not allowed                                      |
+comicKrita keeps its own settings file (`comickritarc`), its own shortcuts file and its own data folder (`comicKrita/krita` under the user's application data), and on Android its own package id. It can be installed and run beside an official Krita. The display settings file (`kritadisplayrc`) and the log files are still shared with Krita.
 
+## Future planned features
+* More UI/UX tweaks (e.g. temporary shortcut key, auto switch from transform to brush tool)
+* Multibrush (symmetry) tool UI changes
+* Comic panel folders, speed & focus lines
+* Clipping layers, Brush previews
 
-### User Manual
-https://docs.krita.org/en/user_manual.html
+## Building
 
-### Development Notes and Build Instructions
+comicKrita builds exactly like the Krita version it is based on; follow [Krita's build instructions](https://docs.krita.org/en/untranslatable_pages/building_krita.html). Its branding (`-DBRANDING=Comic`) is the default.
 
-Please follow [the online documentation](https://docs.krita.org/en/untranslatable_pages/building_krita.html).
+## Acknowledgements
+Inspired by the approaches used in the following:
+* [Blender Grease Pencil module (GPL-3.0)](https://projects.blender.org/blender/blender)
+* [NijiGPen Grease Pencil Addon (GPL-3.0)](https://github.com/chsh2/nijiGPen)
+* [CSP Brush extract (AGPL-3.0)](https://github.com/MorrowShore/CSPBrushExtract/tree/main)
 
-Other developer guides, notes and wiki:
-
-https://docs.krita.org/en/untranslatable_pages.html
-
-Apidox:
-
-https://api.kde.org/legacy/krita/html/index.html
-
-### Bugs and Wishes
-
-https://bugs.kde.org/buglist.cgi?bug_status=UNCONFIRMED&bug_status=CONFIRMED&bug_status=ASSIGNED&bug_status=REOPENED&list_id=1315444&product=krita&query_format=advanced
-
-### Discussion Forum
-
-* https://krita-artists.org/
-
-### IRC channel
-
-Most of the developers hang out here. If you are interested in helping with the project this is a great place to start.
-
-libera.chat, #krita
-
-### Project Website
-
-https://www.krita.org
-
-### Nightly builds
-
-#### Unstable
-
-* https://cdn.kde.org/ci-builds/graphics/krita/master/
-
-#### Stable
-
-* https://cdn.kde.org/ci-builds/graphics/krita/krita-5.2/
-
-#### Developers builds
-
-##### Linux build with debug symbols in Qt and Krita
-
-1) Go to Jobs section of Krita's CI: https://invent.kde.org/graphics/krita/-/jobs
-2) Search for the latest `linux-debug-weekly` job
-3) Enter the job and click on Artifacts->Browse
-4) Download the AppImage
-
-##### Linux build with ASAN in Qt and Krita
-
-1) Go to Jobs section of Krita's CI: https://invent.kde.org/graphics/krita/-/jobs
-2) Search for the latest `linux-asan-weekly` job
-3) Enter the job and click on Artifacts->Browse
-4) Download the AppImage
-5) Set up environment variable for ASAN:
-    ```bash
-        export ASAN_OPTIONS=new_delete_type_mismatch=0:detect_leaks=0
-    ```
-6) Run the AppImage in the modified environment
-
-##### Windows build with ASAN in Qt and Krita
-
-1) Go to Jobs section of Krita's CI: https://invent.kde.org/graphics/krita/-/jobs
-2) Search for the latest `windows-asan-weekly` job
-3) Enter the job and click on Artifacts->Browse
-4) Download the .zip file
-5) Open terminal
-6) Set up environment variable for ASAN:
-    ```
-        set ASAN_OPTIONS=new_delete_type_mismatch=0:detect_leaks=0
-    ```
-7) Change working directory to `c:\path\where\you\downloaded\krita-5.3.0-prealpha-git12345\bin`.
-   That is important, otherwise ASAN will not be able to locate llvm-symbolizer.exe and the
-   backtraces generated by ASAN will not contain proper symbols.
-    ```
-        cd c:\path\where\you\downloaded\krita-5.3.0-prealpha-git12345\bin
-    ```
-8) Run krita
-    ```
-        krita.com
-    ```
-
-### License
-
-Krita as a whole is licensed under the GNU Public License, Version 3. Individual files may have a different, but compatible license.
+And of course, many thanks to the Krita team!

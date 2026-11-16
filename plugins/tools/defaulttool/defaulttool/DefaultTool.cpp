@@ -58,6 +58,12 @@
 #include "KisTextPropertiesManager.h"
 #include <kis_signal_compressor.h>
 #include <KoInteractionStrategyFactory.h>
+#include <kis_icon_utils.h>
+#include <KoColorDisplayRendererInterface.h>
+
+#include <QCheckBox>
+#include <QComboBox>
+#include <QFormLayout>
 #include <KisHandlePainterHelper.h>
 
 #include "kis_document_aware_spin_box_unit_manager.h"
@@ -137,8 +143,9 @@ public:
 class SelectionInteractionStrategy : public KoShapeRubberSelectStrategy
 {
 public:
-    explicit SelectionInteractionStrategy(KoToolBase *parent, const QPointF &clicked, bool useSnapToGrid)
-        : KoShapeRubberSelectStrategy(parent, clicked, useSnapToGrid)
+    explicit SelectionInteractionStrategy(KoToolBase *parent, const QPointF &clicked, bool useSnapToGrid, bool touching = false)
+        : KoShapeRubberSelectStrategy(parent, clicked, useSnapToGrid),
+          m_touching(touching)
     {
     }
 
@@ -157,6 +164,14 @@ public:
         DefaultTool *defaultTool = dynamic_cast<DefaultTool*>(tool());
         KIS_SAFE_ASSERT_RECOVER_RETURN(defaultTool);
 
+        if (m_touching) {
+            QPainterPath area;
+            area.addRect(selectedRectangle());
+            defaultTool->selectShapesIn(area, false);
+            tool()->canvas()->updateCanvas(selectedRectangle() | tool()->decorationsRect());
+            return;
+        }
+
         KoSelection * selection = defaultTool->koSelection();
 
         const bool useContainedMode = currentMode() == CoveringSelection;
@@ -173,7 +188,114 @@ public:
 
         tool()->canvas()->updateCanvas(selectedRectangle() | tool()->decorationsRect());
     }
+
+protected:
+    SelectionMode currentMode() const override
+    {
+        return m_touching ? CrossingSelection : KoShapeRubberSelectStrategy::currentMode();
+    }
+
+private:
+    const bool m_touching;
 };
+namespace {
+
+void paintSelectionArea(QPainter &painter, const QPainterPath &viewArea, bool covering, qreal thickness)
+{
+    // the colors of KoShapeRubberSelectStrategy
+    QColor color(covering ? QColor(8, 60, 167) : QColor(80, 130, 8));
+
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing);
+    color.setAlphaF(0.8);
+    QPen pen(color, thickness);
+    pen.setCosmetic(true);
+    painter.setPen(pen);
+    color.setAlphaF(0.4);
+    painter.setBrush(color);
+    painter.drawPath(viewArea);
+    painter.restore();
+}
+
+/// room for the pen around a selection area, in document points
+QRectF selectionAreaDirtyRect(KoCanvasBase *canvas, const QRectF &rect)
+{
+    const QPointF margin = canvas->viewConverter()->viewToDocument(QPointF(8, 8));
+    return rect.adjusted(-margin.x(), -margin.y(), margin.x(), margin.y());
+}
+
+}
+
+/// an ellipse or a lasso by dragging. Polygons are done in the tool, as they stay open between clicks
+class AreaSelectionStrategy : public KoInteractionStrategy
+{
+public:
+    AreaSelectionStrategy(DefaultTool *tool, const QPointF &clicked, bool ellipse, bool touching)
+        : KoInteractionStrategy(tool),
+          m_ellipse(ellipse),
+          m_touching(touching),
+          m_start(clicked),
+          m_now(clicked),
+          m_lasso({clicked})
+    {
+    }
+
+    void handleMouseMove(const QPointF &mouseLocation, Qt::KeyboardModifiers modifiers) override
+    {
+        Q_UNUSED(modifiers);
+        const QRectF oldRect = area().boundingRect();
+        m_now = mouseLocation;
+        m_lasso << mouseLocation;
+        tool()->canvas()->updateCanvas(selectionAreaDirtyRect(tool()->canvas(), oldRect | area().boundingRect()));
+    }
+
+    KUndo2Command *createCommand() override { return nullptr; }
+
+    void cancelInteraction() override
+    {
+        tool()->canvas()->updateCanvas(selectionAreaDirtyRect(tool()->canvas(), area().boundingRect()));
+    }
+
+    void finishInteraction(Qt::KeyboardModifiers modifiers) override
+    {
+        Q_UNUSED(modifiers);
+        DefaultTool *defaultTool = dynamic_cast<DefaultTool*>(tool());
+        KIS_SAFE_ASSERT_RECOVER_RETURN(defaultTool);
+        if (!m_ellipse && m_lasso.size() < 3) return;
+        defaultTool->selectShapesIn(area(), covering());
+        cancelInteraction();
+    }
+
+    void paint(QPainter &painter, const KoViewConverter &converter) override
+    {
+        paintSelectionArea(painter, converter.documentToView().map(area()), covering(),
+                           tool()->decorationThickness());
+    }
+
+private:
+    /// the option decides when on; otherwise an ellipse has a direction, as the rectangle, and a lasso ends where it began
+    bool covering() const { return !m_touching && (!m_ellipse || m_start.x() <= m_now.x()); }
+
+    QPainterPath area() const
+    {
+        QPainterPath path;
+        path.setFillRule(Qt::WindingFill);
+        if (m_ellipse) {
+            path.addEllipse(QRectF(m_start, m_now).normalized());
+        } else {
+            path.addPolygon(m_lasso);
+            path.closeSubpath();
+        }
+        return path;
+    }
+
+    const bool m_ellipse;
+    const bool m_touching;
+    const QPointF m_start;
+    QPointF m_now;
+    QPolygonF m_lasso;
+};
+
 #include <KoGradientBackground.h>
 #include "KoShapeGradientHandles.h"
 #include "ShapeGradientEditStrategy.h"
@@ -1140,6 +1262,10 @@ void DefaultTool::paint(QPainter &painter, const KoViewConverter &converter)
 
     KoInteractionTool::paint(painter, converter);
 
+    if (!m_polygonPoints.isEmpty()) {
+        paintSelectionArea(painter, converter.documentToView().map(polygonArea()), !m_selectionTouching, decorationThickness());
+    }
+
     painter.save();
     painter.setTransform(converter.documentToView(), true);
     canvas()->snapGuide()->paint(painter, converter);
@@ -1177,12 +1303,35 @@ void DefaultTool::mousePressEvent(KoPointerEvent *event)
         updateCursor();
         return;
     }
+
+    if (!m_polygonPoints.isEmpty()) {
+        // the next corner; a click on the first one closes the polygon
+        const qreal closeDistance = canvas()->viewConverter()->viewToDocumentX(HANDLE_DISTANCE);
+        if (m_polygonPoints.size() >= 3 && QLineF(event->point, m_polygonPoints.first()).length() <= closeDistance) {
+            finishPolygon();
+        } else {
+            m_polygonPoints << event->point;
+            m_polygonNow = event->point;
+            repaintDecorations();
+        }
+        event->accept();
+        return;
+    }
+
     KoInteractionTool::mousePressEvent(event);
     updateCursor();
 }
 
 void DefaultTool::mouseMoveEvent(KoPointerEvent *event)
 {
+    if (!m_polygonPoints.isEmpty()) {
+        repaintDecorations();
+        m_polygonNow = event->point;
+        repaintDecorations();
+        event->accept();
+        return;
+    }
+
     KoInteractionTool::mouseMoveEvent(event);
     if (currentStrategy() == 0 && koSelection() && koSelection()->count() > 0) {
         QRectF bound = handlesSize();
@@ -1230,12 +1379,26 @@ QRectF DefaultTool::handlesSize()
 
 void DefaultTool::mouseReleaseEvent(KoPointerEvent *event)
 {
+    if (!m_polygonPoints.isEmpty()) {
+        // corners are added on press
+        if (!currentStrategy()) {
+            event->accept();
+            return;
+        }
+    }
+
     KoInteractionTool::mouseReleaseEvent(event);
     updateCursor();
 }
 
 void DefaultTool::mouseDoubleClickEvent(KoPointerEvent *event)
 {
+    if (!m_polygonPoints.isEmpty()) {
+        finishPolygon();
+        event->accept();
+        return;
+    }
+
     KoSelection *selection = koSelection();
 
     KoShape *shape = shapeManager()->shapeAt(event->point, KoFlake::ShapeOnTop);
@@ -1289,6 +1452,19 @@ bool DefaultTool::moveSelection(int direction, Qt::KeyboardModifiers modifiers)
 
 void DefaultTool::keyPressEvent(QKeyEvent *event)
 {
+    if (!m_polygonPoints.isEmpty()) {
+        if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+            finishPolygon();
+            event->accept();
+            return;
+        }
+        if (event->key() == Qt::Key_Escape) {
+            cancelPolygon();
+            event->accept();
+            return;
+        }
+    }
+
     KoInteractionTool::keyPressEvent(event);
     if (currentStrategy() == 0) {
         switch (event->key()) {
@@ -1322,7 +1498,56 @@ QRectF DefaultTool::decorationsRect() const
     }
     dirtyRect |= m_textOutlineHelper->decorationRect();
 
+    if (!m_polygonPoints.isEmpty()) {
+        dirtyRect |= selectionAreaDirtyRect(canvas(), polygonArea().boundingRect());
+    }
+
     return dirtyRect;
+}
+
+QPainterPath DefaultTool::polygonArea() const
+{
+    QPainterPath area;
+    area.setFillRule(Qt::WindingFill);
+    area.addPolygon(QPolygonF(m_polygonPoints) << m_polygonNow);
+    area.closeSubpath();
+    return area;
+}
+
+void DefaultTool::finishPolygon()
+{
+    if (m_polygonPoints.size() >= 3) {
+        QPainterPath area;
+        area.setFillRule(Qt::WindingFill);
+        area.addPolygon(m_polygonPoints);
+        area.closeSubpath();
+        selectShapesIn(area, !m_selectionTouching);
+    }
+    cancelPolygon();
+}
+
+void DefaultTool::cancelPolygon()
+{
+    if (m_polygonPoints.isEmpty()) return;
+    repaintDecorations();
+    m_polygonPoints.clear();
+    repaintDecorations();
+}
+
+void DefaultTool::selectShapesIn(const QPainterPath &area, bool contained)
+{
+    KoSelection *selection = koSelection();
+    if (!selection || area.isEmpty()) return;
+
+    // the bounding rect narrows it down, which matters as outlines can be long
+    Q_FOREACH (KoShape *shape, shapeManager()->shapesAt(area.boundingRect(), true, contained)) {
+        if (!shape->isSelectable()) continue;
+        const QPainterPath outline = shape->absoluteTransformation().map(shape->outline());
+        if (contained ? area.contains(outline) : area.intersects(outline)) {
+            selection->select(shape);
+        }
+    }
+    repaintDecorations();
 }
 
 void DefaultTool::copy() const
@@ -1539,6 +1764,7 @@ void DefaultTool::activate(const QSet<KoShape *> &shapes)
 
 void DefaultTool::deactivate()
 {
+    cancelPolygon();
     KoToolBase::deactivate();
 
     QAction *actionBringToFront = action("object_order_front");
@@ -1952,6 +2178,7 @@ QList<QPointer<QWidget> > DefaultTool::createOptionWidgets()
     if (isActivated()) {
         m_tabbedOptionWidget->activate();
     }
+    widgets.append(createSelectionShapeWidget());
     widgets.append(m_tabbedOptionWidget);
 
     connect(m_tabbedOptionWidget,
@@ -1972,6 +2199,40 @@ QList<QPointer<QWidget> > DefaultTool::createOptionWidgets()
             SLOT(slotResetMeshGradientState()));
 
     return widgets;
+}
+
+QWidget *DefaultTool::createSelectionShapeWidget()
+{
+    QWidget *widget = new QWidget();
+    widget->setObjectName("selectionShapeOptions");
+    QFormLayout *layout = new QFormLayout(widget);
+    layout->setContentsMargins(0, 0, 0, 0);
+
+    QComboBox *combo = new QComboBox(widget);
+    combo->setObjectName("cmbSelectionShape");
+    combo->addItem(KisIconUtils::loadIcon("tool_rect_selection"), i18nc("shape selection shape", "Rectangle"), int(SelectionShape::Rectangle));
+    combo->addItem(KisIconUtils::loadIcon("tool_elliptical_selection"), i18nc("shape selection shape", "Ellipse"), int(SelectionShape::Ellipse));
+    combo->addItem(KisIconUtils::loadIcon("tool_outline_selection"), i18nc("shape selection shape", "Lasso"), int(SelectionShape::Lasso));
+    combo->addItem(KisIconUtils::loadIcon("tool_polygonal_selection"), i18nc("shape selection shape", "Polygon"), int(SelectionShape::Polygon));
+    combo->setCurrentIndex(combo->findData(int(m_selectionShape)));
+    combo->setToolTip(i18n("The shape that selects shapes when you drag on empty canvas. Rectangle and Ellipse: dragging to the right selects what is fully inside, dragging to the left what they touch. Lasso and Polygon start anywhere, on a shape too, and select what is fully inside. The option below makes all of them select what they touch. Polygon: click the corners, then double-click, press Enter or click the first corner to finish; Escape cancels."));
+    layout->addRow(i18n("Selection shape:"), combo);
+
+    QCheckBox *touching = new QCheckBox(i18n("Select what it touches"), widget);
+    touching->setObjectName("chkSelectionTouching");
+    touching->setChecked(m_selectionTouching);
+    touching->setToolTip(i18n("Select the shapes the selection shape only touches too, not just the ones fully inside. When this is off, Rectangle and Ellipse go by the drag direction, and Lasso and Polygon select what is fully inside."));
+    connect(touching, &QCheckBox::toggled, this, [this] (bool on) {
+        m_selectionTouching = on;
+        repaintDecorations();
+    });
+    layout->addRow(touching);
+
+    connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, combo] (int) {
+        cancelPolygon();
+        m_selectionShape = SelectionShape(combo->currentData().toInt());
+    });
+    return widget;
 }
 
 void DefaultTool::canvasResourceChanged(int key, const QVariant &res)
@@ -2079,11 +2340,26 @@ KoInteractionStrategy *DefaultTool::createStrategy(KoPointerEvent *event)
 
     KoShape *shape = shapeManager()->shapeAt(event->point, selectNextInStack ? KoFlake::NextUnselected : KoFlake::ShapeOnTop);
 
-    if (avoidSelection || (!shape && handle == KoFlake::NoHandle)) {
+    // a lasso or a polygon starts anywhere: on a stroke too, as a tap there only got in the way
+    const bool areaStartsAnywhere = m_selectionShape == SelectionShape::Lasso || m_selectionShape == SelectionShape::Polygon;
+
+    if (avoidSelection || ((!shape || areaStartsAnywhere) && handle == KoFlake::NoHandle)) {
         if (!selectMultiple) {
             selection->deselectAll();
         }
-        return new SelectionInteractionStrategy(this, event->point, false);
+        switch (m_selectionShape) {
+        case SelectionShape::Ellipse:
+        case SelectionShape::Lasso:
+            return new AreaSelectionStrategy(this, event->point, m_selectionShape == SelectionShape::Ellipse, m_selectionTouching);
+        case SelectionShape::Polygon:
+            m_polygonPoints = QPolygonF({event->point});
+            m_polygonNow = event->point;
+            repaintDecorations();
+            return new NopInteractionStrategy(this);
+        case SelectionShape::Rectangle:
+            break;
+        }
+        return new SelectionInteractionStrategy(this, event->point, false, m_selectionTouching);
     }
 
     if (selection->isSelected(shape)) {

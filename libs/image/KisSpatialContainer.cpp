@@ -21,6 +21,7 @@
 #include <QVector3D>
 
 #include <QtMath>
+#include <cmath>
 
 #include <config-gsl.h>
 
@@ -163,6 +164,55 @@ void KisSpatialContainer::movePoint(int index, QPointF positionBefore, QPointF p
     movePointRec(index, positionBefore, positionAfter, m_root);
 }
 
+void KisSpatialContainer::movePoints(const QVector<int> &indexes, const QVector<QPointF> &positionsBefore, const QVector<QPointF> &positionsAfter)
+{
+    KIS_SAFE_ASSERT_RECOVER_RETURN(indexes.size() == positionsBefore.size() &&
+                                   indexes.size() == positionsAfter.size());
+
+    SpatialNode *lastLeaf = nullptr;
+    int hint = 0;
+    for (int i = 0; i < indexes.size(); i++) {
+        const int index = indexes[i];
+        const QPointF before = positionsBefore[i];
+        const QPointF after = positionsAfter[i];
+
+        // the descent of movePointRec(), as long as both positions take the same child
+        SpatialNode *node = m_root;
+        bool crosses = false;
+        while (node && !node->isLeaf) {
+            const int childBefore = node->childIndexForPoint(before);
+            if (childBefore != node->childIndexForPoint(after)) {
+                crosses = true;
+                break;
+            }
+            node = node->children[childBefore];
+        }
+        if (crosses) {
+            // as movePointRec() from the root would, from where the positions part; it may add or remove nodes
+            movePointRec(index, before, after, node);
+            lastLeaf = nullptr;
+            continue;
+        }
+        if (!node) continue;
+
+        if (node != lastLeaf) {
+            lastLeaf = node;
+            hint = 0;
+        }
+        const int count = node->pointsCount;
+        SpatialNodeData *data = node->pointsData.data();
+        for (int j = 0; j < count; j++) {
+            const int k = hint + j < count ? hint + j : hint + j - count;
+            if (data[k].index == index) {
+                data[k].position = after;
+                hint = k + 1;
+                break;
+            }
+        }
+        KisAlgebra2D::accumulateBounds(after, &node->maximumArea);
+    }
+}
+
 QVector<QPointF> KisSpatialContainer::toVector()
 {
     if (m_count == 0) {
@@ -196,6 +246,36 @@ QRectF KisSpatialContainer::exactBounds()
     QPointF topLeft = getTopLeft();
     QPointF bottomRight = getBoundaryPoint(true, true);
     return QRectF(topLeft, bottomRight);
+}
+
+bool KisSpatialContainer::isExactScale(qreal scale)
+{
+    int exponent = 0;
+    return scale > 0 && std::frexp(scale, &exponent) == 0.5;
+}
+
+void KisSpatialContainer::scaleExactly(qreal sx, qreal sy)
+{
+    KIS_SAFE_ASSERT_RECOVER_RETURN(isExactScale(sx) && isExactScale(sy));
+    scaleExactlyRec(m_root, sx, sy);
+}
+
+void KisSpatialContainer::scaleExactlyRec(SpatialNode *node, qreal sx, qreal sy)
+{
+    if (!node) return;
+
+    node->xPartition *= sx;
+    node->yPartition *= sy;
+    if (!node->maximumArea.isNull()) {
+        node->maximumArea = QRectF(node->maximumArea.x() * sx, node->maximumArea.y() * sy,
+                                   node->maximumArea.width() * sx, node->maximumArea.height() * sy);
+    }
+    for (SpatialNodeData &data : node->pointsData) {
+        data.position = QPointF(data.position.x() * sx, data.position.y() * sy);
+    }
+    for (SpatialNode *child : node->children) {
+        scaleExactlyRec(child, sx, sy);
+    }
 }
 
 void KisSpatialContainer::clear()

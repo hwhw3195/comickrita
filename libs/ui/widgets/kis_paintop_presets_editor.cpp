@@ -639,7 +639,7 @@ void KisPaintOpPresetsEditor::hideEvent(QHideEvent *event)
 
     cfg.writeList<int>("brushEditorSplitterSizes", splitterSizes);
 
-    QWidget *frame = this->parentWidget();
+    QWidget *frame = window(); // [custom] was parentWidget(): KisPopupButton may put this in a scroll area
     cfg.writeEntry("brushEditorWindowGeometry", frame->saveGeometry());
 
     QWidget::hideEvent(event);
@@ -663,7 +663,7 @@ void KisPaintOpPresetsEditor::showEvent(QShowEvent *)
         splitterSizes[2] = 0;
     }
 
-    QWidget *frame = this->parentWidget();
+    QWidget *frame = window(); // [custom] was parentWidget(): KisPopupButton may put this in a scroll area
     QByteArray frameGeometry = cfg.readEntry("brushEditorWindowGeometry", QByteArray());
     if (!frameGeometry.isEmpty()) {
         frame->restoreGeometry(frameGeometry);
@@ -686,11 +686,11 @@ void KisPaintOpPresetsEditor::showEvent(QShowEvent *)
 void KisPaintOpPresetsEditor::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
-    if (parentWidget()) {
+    if (window() != this) { // [custom] was parentWidget(): KisPopupButton may put this in a scroll area
         // Make sure resizing doesn't push this widget out of the screen
         QRect screenRect = this->screen()->availableGeometry();
-        QRect newPositionRect = kisEnsureInRect(parentWidget()->geometry(), screenRect);
-        parentWidget()->setGeometry(newPositionRect);
+        QRect newPositionRect = kisEnsureInRect(window()->geometry(), screenRect);
+        window()->setGeometry(newPositionRect);
     }
 }
 
@@ -725,7 +725,7 @@ void KisPaintOpPresetsEditor::slotSwitchScratchpad(bool visible)
 
         QList<int> splitterSizes = m_d->horzSplitter->sizes();
         splitterSizes[2] = m_d->scratchPanelWidth > 0 ? m_d->scratchPanelWidth : scratchPadPanelInitWidth;
-        QWidget *frame = this->parentWidget();
+        QWidget *frame = window(); // [custom] was parentWidget(): KisPopupButton may put this in a scroll area
         QRect currentGeometry = frame->geometry();
         currentGeometry.setRight(currentGeometry.right() + (splitterSizes[2] - emptyContainerWidth));
         frame->setGeometry(currentGeometry);
@@ -738,7 +738,7 @@ void KisPaintOpPresetsEditor::slotSwitchScratchpad(bool visible)
 
         QList<int> splitterSizes = m_d->horzSplitter->sizes();
         m_d->scratchPanelWidth = m_d->scratchPanelWidth > 0 ? splitterSizes[2] : scratchPadPanelInitWidth;
-        QWidget *frame = this->parentWidget();
+        QWidget *frame = window(); // [custom] was parentWidget(): KisPopupButton may put this in a scroll area
         QRect currentGeometry = frame->geometry();
         currentGeometry.setRight(currentGeometry.right() - (m_d->scratchPanelWidth - emptyContainerWidth));
         frame->setGeometry(currentGeometry);
@@ -785,7 +785,7 @@ void KisPaintOpPresetsEditor::slotSwitchShowPresets(bool visible)
 
         QList<int> splitterSizes = m_d->horzSplitter->sizes();
         splitterSizes[0] = m_d->presetPanelWidth;
-        QWidget *frame = this->parentWidget();
+        QWidget *frame = window(); // [custom] was parentWidget(): KisPopupButton may put this in a scroll area
         QRect currentGeometry = frame->geometry();
         currentGeometry.setLeft(currentGeometry.left() - (splitterSizes[0] - emptyContainerWidth));
         frame->setGeometry(currentGeometry);
@@ -798,7 +798,7 @@ void KisPaintOpPresetsEditor::slotSwitchShowPresets(bool visible)
 
         QList<int> splitterSizes = m_d->horzSplitter->sizes();
         m_d->presetPanelWidth = m_d->presetPanelWidth > 0 ? splitterSizes[0] : brushPresetsPanelInitWidth;
-        QWidget *frame = this->parentWidget();
+        QWidget *frame = window(); // [custom] was parentWidget(): KisPopupButton may put this in a scroll area
         QRect currentGeometry = frame->geometry();
         currentGeometry.setLeft(currentGeometry.left() + (m_d->presetPanelWidth - emptyContainerWidth));
         frame->setGeometry(currentGeometry);

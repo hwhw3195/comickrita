@@ -199,7 +199,18 @@ void KisShapeLayerCanvas::setImage(KisImageWSP image)
     if (image && m_hasUpdateOnSetImage) {
         m_hasUpdateOnSetImage = false;
         const QRectF documentRect = viewConverter()->viewToDocument(m_cachedImageRect);
-        updateCanvas(documentRect);
+
+        /**
+         * Postpone the update to the event loop: setImage() is also called
+         * from the image's own constructor (KisImage::clone(), e.g. on
+         * autosave), when no KisImageSP owns the image yet. The compressor
+         * would start the repaint right away, slotStartAsyncRepaint() would
+         * take a temporary strong pointer to the image and delete the
+         * half-constructed image when that pointer goes out of scope.
+         */
+        QMetaObject::invokeMethod(this, [this, documentRect] () {
+            updateCanvas(documentRect);
+        }, Qt::QueuedConnection);
     }
 }
 
@@ -376,6 +387,8 @@ void KisShapeLayerCanvas::slotStartAsyncRepaint()
         // the only actor that can add stuff to it.
         KIS_SAFE_ASSERT_RECOVER_NOOP(m_paintJobsOrder.isEmpty());
         m_paintJobsOrder = jobsOrder;
+        // with the shapes just taken: both come from the GUI thread
+        m_paintJobsLiveOverlay = m_liveOverlay;
     }
 
     m_hasUpdateInCompressor = false;
@@ -404,10 +417,12 @@ void KisShapeLayerCanvas::repaint()
 {
 
     KoShapeManager::PaintJobsOrder paintJobsOrder;
+    std::function<void(QPainter&, const QRect&)> liveOverlay;
 
     {
         QMutexLocker locker(&m_dirtyRegionMutex);
         std::swap(paintJobsOrder, m_paintJobsOrder);
+        std::swap(liveOverlay, m_paintJobsLiveOverlay);
     }
 
     /**
@@ -430,16 +445,29 @@ void KisShapeLayerCanvas::repaint()
     quint8 * dstData = new quint8[MASK_IMAGE_WIDTH * MASK_IMAGE_HEIGHT * m_projection->pixelSize()];
 
     QRect repaintRect = paintJobsOrder.uncroppedViewUpdateRect;
-    m_projection->clear(repaintRect);
+    // [custom] Each job overwrites its whole rect below (or clears it), so only
+    // what no job covers is cleared up front. Clearing everything first left the
+    // layer without its ink until the jobs had refilled it, and the image could
+    // merge it meanwhile: strokes vanished in parts while they moved.
+    {
+        QRegion uncovered(repaintRect);
+        Q_FOREACH (const KoShapeManager::PaintJob &job, paintJobsOrder.jobs) {
+            uncovered -= job.viewUpdateRect;
+        }
+        for (const QRect &rc : uncovered) {
+            m_projection->clear(rc);
+        }
+    }
 
     Q_FOREACH (const KoShapeManager::PaintJob &job, paintJobsOrder.jobs) {
-        if (job.isEmpty()) {
+        if (job.isEmpty() && !liveOverlay) {
             m_projection->clear(job.viewUpdateRect);
             continue;
         }
 
         KIS_SAFE_ASSERT_RECOVER(job.viewUpdateRect.width() <= MASK_IMAGE_WIDTH &&
                                 job.viewUpdateRect.height() <= MASK_IMAGE_HEIGHT) {
+            m_projection->clear(job.viewUpdateRect);
             continue;
         }
 
@@ -451,6 +479,13 @@ void KisShapeLayerCanvas::repaint()
                                  QTransform::fromTranslate(-job.viewUpdateRect.x(), -job.viewUpdateRect.y()));
 
         m_shapeManager->paintJob(tempPainter, job);
+
+        if (liveOverlay) {
+            tempPainter.save();
+            tempPainter.setTransform(QTransform::fromTranslate(-job.viewUpdateRect.x(), -job.viewUpdateRect.y()));
+            liveOverlay(tempPainter, job.viewUpdateRect);
+            tempPainter.restore();
+        }
 
         if (image.size() != job.viewUpdateRect.size()) {
             const quint8 *imagePtr = image.constBits();
@@ -542,6 +577,11 @@ void KisShapeLayerCanvas::resetCache(const KoColorSpace *colorSpace)
     Q_FOREACH (const KoShape* shape, shapes) {
         shape->update();
     }
+}
+
+void KisShapeLayerCanvas::setLiveOverlay(const std::function<void(QPainter&, const QRect&)> &overlay)
+{
+    m_liveOverlay = overlay;
 }
 
 void KisShapeLayerCanvas::rerenderAfterBeingInvisible()

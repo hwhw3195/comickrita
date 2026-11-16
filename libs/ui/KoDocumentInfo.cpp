@@ -247,7 +247,7 @@ void KoDocumentInfo::updateParameters()
         return;
     }
 
-    KConfig config("kritarc");
+    KConfig config(KConfig::mainConfigName()); // comicKrita: the settings file has its own name
     config.reparseConfiguration();
     KConfigGroup appAuthorGroup(&config, "Author");
     QString profile = appAuthorGroup.readEntry("active-profile", "");

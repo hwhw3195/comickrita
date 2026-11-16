@@ -88,6 +88,7 @@ set(kritaui_LIB_SRCS
     flake/kis_node_shapes_graph.cpp
     flake/kis_node_shape.cpp
     flake/kis_shape_controller.cpp
+    flake/KisShapeLayerHooks.cpp
     flake/kis_shape_layer.cc
     flake/kis_shape_layer_canvas.cpp
     flake/kis_shape_selection.cpp

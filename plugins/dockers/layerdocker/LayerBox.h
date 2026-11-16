@@ -146,6 +146,8 @@ Q_SIGNALS:
 private:
     inline void connectActionToButton(KisViewManager* view, QAbstractButton *button, const QString &id);
     inline void addActionToMenu(QMenu *menu, const QString &id);
+    /// for actions a plugin may add: nothing when there is no such action
+    inline void addOptionalActionToMenu(QMenu *menu, const QString &id);
     // reimp from KisNodeManager
     qint32 convertOpacityToInt(qreal opacity);
 

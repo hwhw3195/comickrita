@@ -9,6 +9,7 @@
     <file>dark_colorizeMask.svg</file>
     <file>dark_fileLayer.svg</file>
     <file>dark_fillLayer.svg</file>
+    <file>dark_freehandVectorLayer.svg</file>
     <file>dark_filterLayer.svg</file>
     <file>dark_filterMask.svg</file>
     <file>dark_groupClosed.svg</file>
@@ -23,6 +24,7 @@
     <file>light_colorizeMask.svg</file>
     <file>light_fileLayer.svg</file>
     <file>light_fillLayer.svg</file>
+    <file>light_freehandVectorLayer.svg</file>
     <file>light_filterLayer.svg</file>
     <file>light_filterMask.svg</file>
     <file>light_groupClosed.svg</file>

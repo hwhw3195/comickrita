@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="1024" height="1024" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <title>Krita icon - speech bubble</title>
+  <path id="bubble-fill" style="fill:#ffffff;stroke:#ffffff;stroke-width:6;stroke-linejoin:round" d="M 668,196 H 796 A 36 36 0 0 1 832,232 V 284 A 36 36 0 0 1 796,320 H 722 L 666,372 L 684,320 H 668 A 36 36 0 0 1 632,284 V 232 A 36 36 0 0 1 668,196 Z" />
+  <path id="badge" style="fill:#3b3b3b;fill-rule:evenodd;stroke:none" d="M 757.46,92.98 L 913.02,248.54 A 36 36 0 0 1 913.02,299.46 L 757.46,455.02 A 36 36 0 0 1 706.54,455.02 L 550.98,299.46 A 36 36 0 0 1 550.98,248.54 L 706.54,92.98 A 36 36 0 0 1 757.46,92.98 Z M 668,196 H 796 A 36 36 0 0 1 832,232 V 284 A 36 36 0 0 1 796,320 H 722 L 666,372 L 684,320 H 668 A 36 36 0 0 1 632,284 V 232 A 36 36 0 0 1 668,196 Z" />
+</svg>

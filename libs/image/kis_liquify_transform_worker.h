@@ -64,6 +64,20 @@ public:
     QVector<QPointF>& transformedPoints();
 
     void run(KisPaintDeviceSP srcDevice, KisPaintDeviceSP dstDevice);
+
+    /**
+     * The area of the destination where run() gives other pixels than it
+     * gave for \p previous: the cells whose corners moved, at their old and
+     * new places. Returns false when the two grids don't match (another
+     * source area or precision), and run() has to redo everything.
+     */
+    bool changedRect(const KisLiquifyTransformWorker &previous, QRect *rect) const;
+
+    /**
+     * run() within \p rect only: clears it in \p dstDevice and paints there
+     * exactly what run() paints, leaving the rest of \p dstDevice alone.
+     */
+    void runInRect(KisPaintDeviceSP srcDevice, KisPaintDeviceSP dstDevice, const QRect &rect);
     QImage runOnQImage(const QImage &srcImage,
                        const QPointF &srcImageOffset,
                        const QTransform &imageToThumbTransform,

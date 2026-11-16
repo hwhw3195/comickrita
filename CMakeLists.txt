@@ -380,7 +380,14 @@ if(BUILD_WITH_QT6 AND NOT "QT6" IN_LIST ALLOW_UNSTABLE)
     )
 endif()
 
-# Branding. Available options: default, Beta, Plus, Next. Can be set from command line
+# comicKrita: the fork wears its own branding unless the command line says otherwise
+if ("${BRANDING}" STREQUAL "")
+    set(BRANDING "Comic")
+endif()
+# comicKrita: the fork's own release name, shown after Krita's version (About, logs)
+set(COMICKRITA_RELEASE "" CACHE STRING "Release name of this comicKrita build, e.g. comic1")
+
+# Branding. Available options: default, Beta, Plus, Next, Comic. Can be set from command line
 if ("${BRANDING}" STREQUAL "")
     if (DEFINED KRITA_STABLE)
         set(BRANDING "default")

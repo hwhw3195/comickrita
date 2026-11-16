@@ -15,6 +15,7 @@ add_subdirectory( sketch )
 add_subdirectory( colorsmudge )
 add_subdirectory( roundmarker )
 add_subdirectory( tangentnormal )
+add_subdirectory( cspbrush )
 
 if(LibMyPaint_FOUND)
     add_subdirectory( mypaint )

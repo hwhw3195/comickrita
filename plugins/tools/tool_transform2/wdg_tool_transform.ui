@@ -311,6 +311,19 @@
     </layout>
    </item>
    <item>
+    <widget class="QCheckBox" name="chkScaleBrushSizes">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="toolTip">
+      <string>Brush strokes on freehand vector layers scale their brush size with the transform. Off, they keep the brush size they were drawn with.</string>
+     </property>
+     <property name="text">
+      <string>Scale brush size</string>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QStackedWidget" name="stackedWidget">
      <property name="frameShape">
       <enum>QFrame::StyledPanel</enum>
@@ -2068,6 +2081,20 @@
              </property>
              <property name="text">
               <string>Reverse:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="6" column="0">
+            <widget class="QLabel" name="lblLiquifyShowReach">
+             <property name="text">
+              <string>Show Reach:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="6" column="1">
+            <widget class="QCheckBox" name="liquifyShowReachChk">
+             <property name="text">
+              <string/>
              </property>
             </widget>
            </item>

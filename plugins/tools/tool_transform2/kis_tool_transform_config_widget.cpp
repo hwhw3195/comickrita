@@ -7,11 +7,16 @@
 #include <QVector3D>
 #include "kis_tool_transform_config_widget.h"
 
+#include <QSignalBlocker>
+#include <QStandardItemModel>
+
 #include <kis_icon.h>
 #include "rotation_icons.h"
 #include "kis_canvas2.h"
 #include <KisSignalMapper.h>
 #include "kis_liquify_properties.h"
+#include "KisShapeLayerHooks.h"
+#include <QAbstractButton>
 
 #include "KisMainWindow.h"
 #include "KisViewManager.h"
@@ -37,19 +42,7 @@ KisToolTransformConfigWidget::KisToolTransformConfigWidget(TransformTransactionP
 {
     setupUi(this);
 
-    KConfigGroup group = KSharedConfig::openConfig()->group("KisToolTransform");
-    bool useInStackPreview = !group.readEntry("useOverlayPreviewStyle", false);
-    bool forceLodMode = group.readEntry("forceLodMode", true);
-
-    if (useInStackPreview && !forceLodMode) {
-       cmbPreviewMode->setCurrentIndex(0);
-    }
-    else if (useInStackPreview && forceLodMode) {
-        cmbPreviewMode->setCurrentIndex(1);
-    }
-    else {
-        cmbPreviewMode->setCurrentIndex(2);
-    }
+    cmbPreviewMode->setCurrentIndex(previewIndexFromConfig());
 
     connect(cmbPreviewMode, SIGNAL(currentIndexChanged(int)), this, SLOT(slotPreviewChanged(int)));
 
@@ -159,6 +152,7 @@ KisToolTransformConfigWidget::KisToolTransformConfigWidget(TransformTransactionP
 
     connect(m_rotationCenterButtons, SIGNAL(idPressed(int)), this, SLOT(slotRotationCenterChanged(int)));
     connect(btnTransformAroundPivotPoint, SIGNAL(clicked(bool)), this, SLOT(slotTransformAroundRotationCenter(bool)));
+    connect(chkScaleBrushSizes, SIGNAL(toggled(bool)), this, SLOT(slotScaleBrushSizes(bool)));
 
     // Init Free Transform Values
     connect(scaleXBox, SIGNAL(valueChanged(int)), this, SLOT(slotSetScaleX(int)));
@@ -258,6 +252,10 @@ KisToolTransformConfigWidget::KisToolTransformConfigWidget(TransformTransactionP
     connect(liquifyReverseDirectionChk, SIGNAL(toggled(bool)), this, SLOT(liquifyReverseDirectionChanged(bool)));
     connect(liquifyReverseDirectionChk, SIGNAL(toggled(bool)), this, SLOT(notifyEditingFinished()));
     liquifyReverseDirectionChk->setToolTip(i18nc("@info:tooltip", "Reverse direction of the current deformation tool"));
+
+    liquifyShowReachChk->setChecked(KSharedConfig::openConfig()->group("LiquifyTool").readEntry("showEffectReach", true));
+    connect(liquifyShowReachChk, SIGNAL(toggled(bool)), this, SLOT(slotLiquifyShowReachChanged(bool)));
+    liquifyShowReachChk->setToolTip(i18nc("@info:tooltip", "Show a dashed circle at the distance where the deformation stops. The effect is already weak outside the solid circle"));
 
     KisSignalMapper *liquifyModeMapper = new KisSignalMapper(this);
     connect(liquifyMove, SIGNAL(toggled(bool)), liquifyModeMapper, SLOT(map()));
@@ -531,10 +529,66 @@ void KisToolTransformConfigWidget::liquifyReverseDirectionChanged(bool value)
     notifyConfigChanged(false);
 }
 
+int KisToolTransformConfigWidget::previewIndexFromConfig()
+{
+    KConfigGroup group = KSharedConfig::openConfig()->group("KisToolTransform");
+    bool useInStackPreview = !group.readEntry("useOverlayPreviewStyle", false);
+    bool forceLodMode = group.readEntry("forceLodMode", true);
+
+    if (useInStackPreview && !forceLodMode) {
+        return 0;
+    }
+    else if (useInStackPreview && forceLodMode) {
+        return 1;
+    }
+    return 2;
+}
+
+void KisToolTransformConfigWidget::updatePreviewModes(bool fullResolution, bool liquifyTargets)
+{
+    QStandardItemModel *model = qobject_cast<QStandardItemModel*>(cmbPreviewMode->model());
+    KIS_SAFE_ASSERT_RECOVER_RETURN(model);
+
+    // Vector layers that preview at full resolution only (KisTransformUtils::
+    // vectorForcesFullResolution()) have no reduced preview, so Accurate with
+    // Instant Preview shows as Accurate and is greyed out; the saved choice
+    // stays for other layers. In Liquify, Fast bends the strokes' last
+    // rendering until the moves pause, and Accurate renders them as they move
+    m_fullResolution = fullResolution;
+    QSignalBlocker blocker(cmbPreviewMode);
+    model->item(1)->setEnabled(!fullResolution);
+    const int index = previewIndexFromConfig();
+    cmbPreviewMode->setCurrentIndex(fullResolution && index == 1 ? 0 : index);
+    cmbPreviewMode->setToolTip(liquifyTargets ? i18n("Fast bends the strokes and renders them when you pause")
+                               : fullResolution ? i18n("Vector strokes preview at full resolution, so there is no Instant Preview")
+                               : QString());
+}
+
 void KisToolTransformConfigWidget::updateConfig(const ToolTransformArgs &config)
 {
     blockUiSlots();
- 
+
+    // vector layers Liquify moves itself (KisShapeLayerHooks)
+    // and the deforming modes (Perspective) likewise
+    bool hasLiquifyTargets = false;
+    bool fullResolution = false;
+    Q_FOREACH (KisNodeSP node, m_transaction->transformedNodes()) {
+        hasLiquifyTargets |= config.mode() == ToolTransformArgs::LIQUIFY ? KisShapeLayerHooks::isLiquifyTarget(node.data())
+                                                                          : KisTransformUtils::isVectorDeformTarget(config.mode(), node.data());
+        fullResolution |= KisTransformUtils::vectorForcesFullResolution(config.mode(), node.data());
+    }
+    updatePreviewModes(fullResolution, hasLiquifyTargets);
+
+    // only what the checkbox works on, and only the modes that take vector layers as vectors
+    bool hasBrushSizes = false;
+    Q_FOREACH (KisNodeSP node, m_transaction->transformedNodes()) {
+        if (config.mode() == ToolTransformArgs::FREE_TRANSFORM || KisTransformUtils::isVectorDeformTarget(config.mode(), node.data())) {
+            hasBrushSizes |= KisShapeLayerHooks::hasBrushSizes(node.data());
+        }
+    }
+    chkScaleBrushSizes->setVisible(hasBrushSizes);
+    chkScaleBrushSizes->setChecked(config.scaleBrushSizes());
+
     if (config.mode() == ToolTransformArgs::FREE_TRANSFORM ||
         config.mode() == ToolTransformArgs::PERSPECTIVE_4POINT) {
 
@@ -637,6 +691,21 @@ void KisToolTransformConfigWidget::updateConfig(const ToolTransformArgs &config)
 
         stackedWidget->setCurrentIndex(3);
         liquifyButton->setChecked(true);
+
+        // vector layers Liquify moves itself take Move and Offset only
+        for (QAbstractButton *button : {static_cast<QAbstractButton*>(liquifyScale),
+                                        static_cast<QAbstractButton*>(liquifyRotate),
+                                        static_cast<QAbstractButton*>(liquifyUndo)}) {
+            button->setEnabled(!hasLiquifyTargets);
+        }
+        if (hasLiquifyTargets) {
+            KisLiquifyProperties *currentProps = m_transaction->currentConfig()->liquifyProperties();
+            if (currentProps->mode() != KisLiquifyProperties::MOVE &&
+                currentProps->mode() != KisLiquifyProperties::OFFSET) {
+                currentProps->setMode(KisLiquifyProperties::MOVE);
+                currentProps->loadMode();
+            }
+        }
 
         const KisLiquifyProperties *props =
             config.liquifyProperties();
@@ -869,6 +938,16 @@ void KisToolTransformConfigWidget::slotTransformAroundRotationCenter(bool value)
 
     ToolTransformArgs *config = m_transaction->currentConfig();
     config->setTransformAroundRotationCenter(value);
+    notifyConfigChanged();
+    notifyEditingFinished();
+}
+
+void KisToolTransformConfigWidget::slotScaleBrushSizes(bool value)
+{
+    if (m_uiSlotsBlocked) return;
+
+    ToolTransformArgs *config = m_transaction->currentConfig();
+    config->setScaleBrushSizes(value);
     notifyConfigChanged();
     notifyEditingFinished();
 }
@@ -1356,13 +1435,20 @@ void KisToolTransformConfigWidget::slotMeshScaleHandlesChanged()
     notifyEditingFinished();
 }
 
+void KisToolTransformConfigWidget::slotLiquifyShowReachChanged(bool value)
+{
+    KSharedConfig::openConfig()->group("LiquifyTool").writeEntry("showEffectReach", value);
+    Q_EMIT sigUpdateGlobalConfig();
+}
+
 void KisToolTransformConfigWidget::slotPreviewChanged(int index)
 {
     KConfigGroup group = KSharedConfig::openConfig()->group("KisToolTransform");
     switch(index) {
     case 0:
         group.writeEntry("useOverlayPreviewStyle", false);
-        group.writeEntry("forceLodMode", false);
+        // Accurate stands for both accurate previews here (updatePreviewModes())
+        if (!m_fullResolution) group.writeEntry("forceLodMode", false);
         break;
     case 1:
         group.writeEntry("useOverlayPreviewStyle", false);

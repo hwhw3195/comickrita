@@ -33,6 +33,7 @@
 #include <KoShapeBackgroundCommand.h>
 #include <KoShapeStrokeCommand.h>
 #include <KoShapeStroke.h>
+#include <KoStrokeFeatures.h>
 #include <KoSelectedShapesProxy.h>
 #include <KoColorBackground.h>
 #include <KoGradientBackground.h>
@@ -159,7 +160,6 @@ static const char* const buttonpattern[]={
     "#aaaaabbbbaaaaa#",
     "################"};
 
-using namespace std::placeholders;
 
 
 class Q_DECL_HIDDEN KoFillConfigWidget::Private
@@ -167,7 +167,11 @@ class Q_DECL_HIDDEN KoFillConfigWidget::Private
 public:
     Private(KoFlake::FillVariant _fillVariant, KoFillConfigWidget* q)
     : canvas(0),
-      colorChangedCompressor(100, std::bind(&KoFillConfigWidget::colorChanged, q, _1)),
+      // queued: adding the command may wait on a busy image, and so process
+      // events, which must not happen inside the compressor's start()
+      colorChangedCompressor(100, [q] (std::pair<QColor, KoFlake::FillVariant> resource) {
+          QMetaObject::invokeMethod(q, [q, resource] () { q->colorChanged(resource); }, Qt::QueuedConnection);
+      }),
       gradientChangedCompressor(100, KisSignalCompressor::FIRST_ACTIVE),
       shapeChangedCompressor(200,KisSignalCompressor::FIRST_ACTIVE),
       fillVariant(_fillVariant),
@@ -968,6 +972,16 @@ void KoFillConfigWidget::shapeChanged()
         shouldUploadColorToResourceManager = true;
     }
 
+    // some shapes can't have a gradient on their stroke
+    if (d->fillVariant == KoFlake::StrokeFill) {
+        Q_FOREACH (KoShape *shape, shapes) {
+            const KoStrokeFeatures *features = dynamic_cast<const KoStrokeFeatures*>(shape);
+            if (features && !features->strokeFeatures().testFlag(KoStrokeFeatures::Gradient)) {
+                d->ui->btnGradientFill->setEnabled(false);
+            }
+        }
+    }
+
     // updates the UI
     d->group->button(d->selectedFillIndex)->setChecked(true);
 
@@ -987,9 +1001,16 @@ void KoFillConfigWidget::updateUiFromFillType(KoShape *shape)
     KoShapeFillWrapper wrapper(shape, d->fillVariant);
 
     switch (wrapper.type()) {
-        case KoFlake::None:
-             d->selectedFillIndex = KoFillConfigWidget::None;
+        case KoFlake::None: {
+            d->selectedFillIndex = KoFillConfigWidget::None;
+            // Solid brings back the color such a shape kept. Only shown here: applying it would show the shape
+            const KoStrokeFeatures *features = dynamic_cast<const KoStrokeFeatures*>(shape);
+            if (features && features->hiddenColor().isValid()) {
+                KisSignalsBlocker b(d->colorAction);
+                d->colorAction->setCurrentColor(features->hiddenColor());
+            }
             break;
+        }
         case KoFlake::Solid: {
             d->selectedFillIndex = KoFillConfigWidget::Solid;
             QColor color = wrapper.color();

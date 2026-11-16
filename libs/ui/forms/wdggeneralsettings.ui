@@ -1105,6 +1105,23 @@
          </property>
         </widget>
        </item>
+       <item row="14" column="0">
+        <widget class="QLabel" name="lblSliderSnapByDefault">
+         <property name="text">
+          <string>Slider Snap Settings</string>
+         </property>
+        </widget>
+       </item>
+       <item row="14" column="1">
+        <widget class="QCheckBox" name="chkSliderSnapByDefault">
+         <property name="toolTip">
+          <string>Dragging a slider snaps its value to the slider's step, and holding Ctrl while dragging gives free values. When off, dragging gives free values and Ctrl snaps. Double-click a slider to type an exact value.</string>
+         </property>
+         <property name="text">
+          <string>Slider snaps by default (Ctrl + drag for free)</string>
+         </property>
+        </widget>
+       </item>
        <item row="13" column="0" colspan="2">
         <widget class="QGroupBox" name="groupBox_5">
          <property name="alignment">

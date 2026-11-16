@@ -81,6 +81,9 @@ struct KisPaintInformation::Private {
         }
 
         levelOfDetail = rhs.levelOfDetail;
+        sizeMultiplier = rhs.sizeMultiplier;
+        densityScale = rhs.densityScale;
+        densityOffset = rhs.densityOffset;
     }
 
 
@@ -131,6 +134,9 @@ struct KisPaintInformation::Private {
     boost::optional<DirectionHistoryInfo> directionHistoryInfo;
 
     int levelOfDetail;
+    qreal sizeMultiplier {1.0};
+    qreal densityScale {1.0};
+    qreal densityOffset {0.0};
 
     void registerDistanceInfo(KisDistanceInformation *di) {
         directionHistoryInfo = DirectionHistoryInfo(di->scalarDistanceApprox(),
@@ -535,6 +541,38 @@ void KisPaintInformation::setPerStrokeRandomSource(KisPerStrokeRandomSourceSP va
     d->perStrokeRandomSource = value;
 }
 
+qreal KisPaintInformation::sizeMultiplier() const
+{
+    return d->sizeMultiplier;
+}
+
+void KisPaintInformation::setSizeMultiplier(qreal value)
+{
+    d->sizeMultiplier = value;
+}
+
+qreal KisPaintInformation::densityScale() const
+{
+    return d->densityScale;
+}
+
+qreal KisPaintInformation::densityOffset() const
+{
+    return d->densityOffset;
+}
+
+void KisPaintInformation::setDensity(qreal scale, qreal offset)
+{
+    d->densityScale = scale;
+    d->densityOffset = offset;
+}
+
+qreal KisPaintInformation::applyDensity(qreal value) const
+{
+    if (d->densityScale == 1.0 && d->densityOffset == 0.0) return value;
+    return qBound(0.0, d->densityScale * value + d->densityOffset, 1.0);
+}
+
 void KisPaintInformation::setLevelOfDetail(int levelOfDetail)
 {
     d->levelOfDetail = levelOfDetail;
@@ -634,6 +672,9 @@ void KisPaintInformation::mixOtherImpl(const QPointF &p, qreal t, const KisPaint
         qreal perspective = (1 - t) * other.perspective() + t * this->perspective();
         qreal time = mixTime ? ((1 - t) * other.currentTime() + t * this->currentTime()) : this->currentTime();
         qreal speed = (1 - t) * other.drawingSpeed() + t * this->drawingSpeed();
+        qreal sizeMultiplier = (1 - t) * other.d->sizeMultiplier + t * this->d->sizeMultiplier;
+        qreal densityScale = (1 - t) * other.d->densityScale + t * this->d->densityScale;
+        qreal densityOffset = (1 - t) * other.d->densityOffset + t * this->d->densityOffset;
 
         KIS_ASSERT_RECOVER_NOOP(other.isHoveringMode() == this->isHoveringMode());
         *(this->d) = Private(p, pressure, xTilt, yTilt, rotation, tangentialPressure, perspective, time, speed, other.isHoveringMode());
@@ -645,6 +686,9 @@ void KisPaintInformation::mixOtherImpl(const QPointF &p, qreal t, const KisPaint
         // this->d->isHoveringMode = other.isHoveringMode();
         this->d->levelOfDetail = other.d->levelOfDetail;
         this->d->tiltDirectionOffset = other.d->tiltDirectionOffset;
+        this->d->sizeMultiplier = sizeMultiplier;
+        this->d->densityScale = densityScale;
+        this->d->densityOffset = densityOffset;
     }
 }
 

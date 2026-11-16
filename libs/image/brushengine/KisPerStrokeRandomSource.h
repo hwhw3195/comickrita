@@ -20,6 +20,13 @@ public:
     KisPerStrokeRandomSource();
     KisPerStrokeRandomSource(const KisPerStrokeRandomSource &rhs);
 
+    /**
+     * Creates a source with a fixed \p seed. Two sources with the same seed
+     * generate the same value for the same key, which lets a stroke be
+     * re-rendered exactly.
+     */
+    explicit KisPerStrokeRandomSource(int seed);
+
     ~KisPerStrokeRandomSource();
 
     /**
@@ -31,6 +38,11 @@ public:
      * Generates a random number in a closed range [0; 1.0]
      */
     qreal generateNormalized(const QString &key) const;
+
+    /**
+     * The seed this source was created with
+     */
+    int seed() const;
 
 private:
     struct Private;

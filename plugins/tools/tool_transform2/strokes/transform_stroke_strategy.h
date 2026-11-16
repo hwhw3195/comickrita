@@ -8,11 +8,13 @@
 #define __TRANSFORM_STROKE_STRATEGY_H
 
 #include <QObject>
+#include "kis_vector_transform_pass.h"
 #include <QMutex>
 #include <KoUpdater.h>
 #include <kis_stroke_strategy_undo_command_based.h>
 #include <kis_types.h>
 #include "tool_transform_args.h"
+#include "kis_liquify_properties.h"
 #include <kis_processing_visitor.h>
 #include <kritatooltransform_export.h>
 #include <boost/optional.hpp>
@@ -130,9 +132,13 @@ private:
     bool m_updatesDisabled = false;
     ToolTransformArgs::TransformMode m_mode;
     QString m_filterId;
+    /// read in the GUI thread: KSharedConfig is per thread, and a worker's can be older
+    KisLiquifyProperties m_liquifyProperties;
     bool m_forceReset;
 
     KisSelectionSP m_selection;
+    /// the vector layers a plugin moves itself (KisShapeLayerHooks)
+    KisVectorTransformPass m_vectors;
 
     QMutex m_devicesCacheMutex;
     QHash<KisPaintDevice*, KisPaintDeviceSP> m_devicesCacheHash;

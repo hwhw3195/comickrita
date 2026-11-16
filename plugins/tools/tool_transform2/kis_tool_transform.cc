@@ -75,7 +75,13 @@
 
 #include "krita_container_utils.h"
 #include "kis_layer_utils.h"
+#include "kis_liquify_paintop.h"
+#include "kis_node_manager.h"
+#include "krita_container_utils.h"
+#include <QTimer>
 #include <KisDelayedUpdateNodeInterface.h>
+#include <KisShapeLayerHooks.h>
+#include <kis_shape_layer.h>
 #include "kis_config_notifier.h"
 
 #include "strokes/transform_stroke_strategy.h"
@@ -206,6 +212,7 @@ void KisToolTransform::slotGlobalConfigChanged()
     KConfigGroup group = KSharedConfig::openConfig()->group(toolId());
     m_preferOverlayPreviewStyle = group.readEntry("useOverlayPreviewStyle", false);
     m_forceLodMode = group.readEntry("forceLodMode", true);
+    m_showLiquifyReach = KSharedConfig::openConfig()->group("LiquifyTool").readEntry("showEffectReach", true);
 }
 
 void KisToolTransform::resetRotationCenterButtonsRequested()
@@ -301,6 +308,23 @@ void KisToolTransform::paint(QPainter& gc, const KoViewConverter &converter)
                 m_canvas->coordinatesConverter()).map(m_cursorOutline);
         paintToolOutline(&gc, mappedOutline);
     }
+
+    // how far Liquify really reaches, dashed: the outlines have no pen of their
+    // own in the OpenGL canvas, so the dashes are pieces of the path
+    if (m_showLiquifyReach && m_currentArgs.mode() == ToolTransformArgs::LIQUIFY && m_cursorReachRadius > 0.0) {
+        const QTransform imageToFlake = KisTransformUtils::imageToFlakeTransform(m_canvas->coordinatesConverter());
+        const qreal screenLength = 2.0 * M_PI * m_cursorReachRadius * KisTransformUtils::scaleFromAffineMatrix(imageToFlake);
+        const int dashes = qBound(8, qRound(screenLength / 16.0), 512);
+        const qreal step = 360.0 / dashes;
+        const QRectF rect(m_cursorReachCenter - QPointF(m_cursorReachRadius, m_cursorReachRadius),
+                          QSizeF(2.0 * m_cursorReachRadius, 2.0 * m_cursorReachRadius));
+        QPainterPath ring;
+        for (int i = 0; i < dashes; i++) {
+            ring.arcMoveTo(rect, i * step);
+            ring.arcTo(rect, i * step, 0.5 * step);
+        }
+        paintToolOutline(&gc, imageToFlake.map(ring));
+    }
 }
 
 void KisToolTransform::setFunctionalCursor()
@@ -323,18 +347,26 @@ void KisToolTransform::cursorOutlineUpdateRequested(const QPointF &imagePos)
 {
     QRect canvasUpdateRect;
 
+    auto outlineRect = [this] () {
+        const QPointF reach(m_cursorReachRadius, m_cursorReachRadius);
+        return m_cursorOutline.boundingRect() | QRectF(m_cursorReachCenter - reach, m_cursorReachCenter + reach);
+    };
+
     if (!m_cursorOutline.isEmpty()) {
         canvasUpdateRect = m_canvas->coordinatesConverter()->
-            imageToDocument(m_cursorOutline.boundingRect()).toAlignedRect();
+            imageToDocument(outlineRect()).toAlignedRect();
     }
 
     m_cursorOutline = currentStrategy()->
         getCursorOutline().translated(imagePos);
+    m_cursorReachCenter = imagePos;
+    m_cursorReachRadius = m_currentArgs.mode() == ToolTransformArgs::LIQUIFY ?
+        KisLiquifyPaintop::effectReach(*m_currentArgs.liquifyProperties()) : 0.0;
 
     if (!m_cursorOutline.isEmpty()) {
         canvasUpdateRect |=
             m_canvas->coordinatesConverter()->
-            imageToDocument(m_cursorOutline.boundingRect()).toAlignedRect();
+            imageToDocument(outlineRect()).toAlignedRect();
     }
 
     if (!canvasUpdateRect.isEmpty()) {
@@ -415,6 +447,11 @@ void KisToolTransform::endActionImpl(KoPointerEvent *event, bool usePrimaryActio
 
     updateOptionWidget();
     updateApplyResetAvailability();
+
+    if (m_layerSelectionChangePending) {
+        m_layerSelectionChangePending = false;
+        followLayerSelection();
+    }
 }
 
 QMenu* KisToolTransform::popupActionsMenu()
@@ -847,6 +884,15 @@ void KisToolTransform::activate(const QSet<KoShape*> &shapes)
                                       this,
                                       SLOT(slotDecreaseBrushSize()));
 
+    KisCanvas2 *kisCanvas = dynamic_cast<KisCanvas2*>(canvas());
+    if (kisCanvas && kisCanvas->viewManager()) {
+        KisNodeManager *nodeManager = kisCanvas->viewManager()->nodeManager();
+        m_actionConnections.addConnection(nodeManager, SIGNAL(sigUiNeedChangeSelectedNodes(QList<KisNodeSP>)),
+                                          this, SLOT(slotLayerSelectionChanged()));
+        m_actionConnections.addConnection(nodeManager, SIGNAL(sigNodeActivated(KisNodeSP)),
+                                          this, SLOT(slotLayerSelectionChanged()));
+    }
+
     if (currentNode()) {
         m_transaction = TransformTransactionProperties(QRectF(), &m_currentArgs, KisNodeList(), {});
     }
@@ -858,6 +904,7 @@ void KisToolTransform::activate(const QSet<KoShape*> &shapes)
 void KisToolTransform::deactivate()
 {
     endStroke();
+    m_layerSelectionChangePending = false;
     m_canvas->updateCanvas();
     m_actionConnections.clear();
     KisTool::deactivate();
@@ -900,6 +947,17 @@ void KisToolTransform::requestStrokeCancellation()
 void KisToolTransform::requestImageRecalculation()
 {
     if (!m_currentlyUsingOverlayPreviewStyle && m_strokeId && !m_transaction.rootNodes().isEmpty()) {
+        // the live preview of the vector layers Liquify moves itself
+        // (KisShapeLayerHooks): their shapes move here, the stroke leaves them
+        // alone until its final pass, which closes the preview
+        if (m_currentArgs.mode() == ToolTransformArgs::LIQUIFY && KisShapeLayerHooks::hasLiquifyPreview()) {
+            Q_FOREACH (KisNodeSP node, m_transaction.transformedNodes()) {
+                if (KisShapeLayerHooks::isLiquifyTarget(node.data())) {
+                    KisShapeLayerHooks::liquifyPreview(static_cast<KisShapeLayer*>(node.data()),
+                                                       m_currentArgs.liquifyDabs(), m_preferOverlayPreviewStyle);
+                }
+            }
+        }
         image()->addJob(
             m_strokeId,
             new InplaceTransformStrokeStrategy::UpdateTransformData(
@@ -911,6 +969,9 @@ void KisToolTransform::requestImageRecalculation()
 void KisToolTransform::startStroke(ToolTransformArgs::TransformMode mode, bool forceReset)
 {
     Q_ASSERT(!m_strokeId);
+
+    m_lastStrokeMode = mode;
+    m_strokeRootNodes.clear();
 
     KisPaintDeviceSP externalSource = m_externalSourceForNextActivation;
     m_externalSourceForNextActivation.clear();
@@ -1011,6 +1072,21 @@ void KisToolTransform::startStroke(ToolTransformArgs::TransformMode mode, bool f
     // Overlay preview is never used when transforming an externally provided image
     m_currentlyUsingOverlayPreviewStyle = m_preferOverlayPreviewStyle && !externalSource;
 
+    // ... nor for vector layers Liquify or a deforming mode moves by itself
+    // (KisShapeLayerHooks): only the in-place stroke moves their shapes
+    if (m_currentlyUsingOverlayPreviewStyle &&
+        (mode == ToolTransformArgs::LIQUIFY || KisTransformUtils::isVectorDeformMode(mode))) {
+        Q_FOREACH (KisNodeSP root, rootNodes) {
+            if (KisLayerUtils::recursiveFindNode(root, [mode] (KisNodeSP node) {
+                    return mode == ToolTransformArgs::LIQUIFY ? KisShapeLayerHooks::isLiquifyTarget(node.data())
+                                                              : KisTransformUtils::isVectorDeformTarget(mode, node.data());
+                })) {
+                m_currentlyUsingOverlayPreviewStyle = false;
+                break;
+            }
+        }
+    }
+
     KisStrokeStrategy *strategy = 0;
 
     if (m_currentlyUsingOverlayPreviewStyle) {
@@ -1028,6 +1104,8 @@ void KisToolTransform::startStroke(ToolTransformArgs::TransformMode mode, bool f
 
     } else {
         InplaceTransformStrokeStrategy *transformStrategy = new InplaceTransformStrokeStrategy(mode, m_currentArgs.filterId(), forceReset, rootNodes, selection, externalSource, image().data(), image().data(), image()->root(), m_forceLodMode);
+        // the Fast preview, for the vector layers a plugin moves itself while the stroke runs in place
+        transformStrategy->setVectorFastPreview(m_preferOverlayPreviewStyle);
         connect(transformStrategy, SIGNAL(sigTransactionGenerated(TransformTransactionProperties, ToolTransformArgs, void*)), SLOT(slotTransactionGenerated(TransformTransactionProperties, ToolTransformArgs, void*)));
         connect(transformStrategy, SIGNAL(sigConvexHullCalculated(QPolygon, void*)), SLOT(slotConvexHullCalculated(QPolygon, void*)));
         strategy = transformStrategy;
@@ -1040,6 +1118,7 @@ void KisToolTransform::startStroke(ToolTransformArgs::TransformMode mode, bool f
     }
 
     m_strokeId = image()->startStroke(strategy);
+    m_strokeRootNodes = rootNodes;
 
     if (!m_currentlyUsingOverlayPreviewStyle) {
         m_asyncUpdateHelper.initUpdateStreamLowLevel(image().data(), m_strokeId);
@@ -1053,6 +1132,8 @@ void KisToolTransform::startStroke(ToolTransformArgs::TransformMode mode, bool f
 void KisToolTransform::endStroke()
 {
     if (!m_strokeId) return;
+
+    if (!m_transaction.rootNodes().isEmpty()) m_lastStrokeMode = m_currentArgs.mode();
 
     if (m_currentlyUsingOverlayPreviewStyle &&
         !m_transaction.rootNodes().isEmpty() &&
@@ -1140,6 +1221,8 @@ void KisToolTransform::cancelStroke()
 {
     if (!m_strokeId) return;
 
+    if (!m_transaction.rootNodes().isEmpty()) m_lastStrokeMode = m_currentArgs.mode();
+
     if (m_asyncUpdateHelper.isActive()) {
         m_asyncUpdateHelper.cancelUpdateStream();
     }
@@ -1156,6 +1239,10 @@ void KisToolTransform::commitChanges()
 {
     if (!m_strokeId || m_transaction.rootNodes().isEmpty()) return;
 
+    // Liquify's brush settings are not a step of the transform
+    const ToolTransformArgs *lastArgs = dynamic_cast<const ToolTransformArgs*>(m_changesTracker.lastState().data());
+    if (lastArgs && lastArgs->isSameLiquifyDeformation(m_currentArgs)) return;
+
     m_changesTracker.commitConfig(toQShared(m_currentArgs.clone()));
 }
 
@@ -1164,7 +1251,10 @@ void KisToolTransform::slotTrackerChangedConfig(KisToolChangesTrackerDataSP stat
     const ToolTransformArgs *newArgs = dynamic_cast<const ToolTransformArgs*>(status.data());
     KIS_SAFE_ASSERT_RECOVER_RETURN(newArgs);
 
+    // undo takes back the transform, and leaves Liquify's brush settings as they are
+    const KisLiquifyProperties liquifyProperties = *m_transaction.currentConfig()->liquifyProperties();
     *m_transaction.currentConfig() = *newArgs;
+    *m_transaction.currentConfig()->liquifyProperties() = liquifyProperties;
 
     slotUiChangedConfig(true);
     updateOptionWidget();
@@ -1281,13 +1371,44 @@ void KisToolTransform::slotResetTransform(ToolTransformArgs::TransformMode mode)
 {
     ToolTransformArgs *config = m_transaction.currentConfig();
     const ToolTransformArgs::TransformMode previousMode = config->mode();
+
+    // a switch to another mode applies what is done so far, as one undo step.
+    // A transform mask has no result to apply, and a pasted image stays floating
+    if (mode != previousMode && m_strokeId && !m_transaction.rootNodes().isEmpty() && !m_currentArgs.externalSource()) {
+        bool hasTransformMask = false;
+        Q_FOREACH (KisNodeSP node, m_transaction.transformedNodes()) {
+            hasTransformMask |= node->inherits("KisTransformMask");
+        }
+
+        const ToolTransformArgs *continued = m_currentArgs.continuedTransform();
+        const bool hasChanges =
+            !continued ? !m_currentArgs.isIdentity() :
+            previousMode == ToolTransformArgs::LIQUIFY ? !continued->isSameLiquifyDeformation(m_currentArgs) :
+            !continued->isSameMode(m_currentArgs);
+
+        if (hasChanges && !hasTransformMask) {
+            // the last dabs of Liquify may still wait for a repaint of the canvas
+            requestImageRecalculation();
+            endStroke();
+            startStroke(mode, true);
+            return;
+        }
+    }
+
     config->setMode(mode);
 
     if (mode == ToolTransformArgs::WARP) {
         config->setWarpCalculation(KisWarpTransformWorker::WarpCalculation::GRID);
     }
 
-    if (!m_strokeId || m_transaction.rootNodes().isEmpty()) return;
+    // the last mode left out all the layers (Warp on a vector layer) and ended
+    // the stroke: this one may take them, so its frame and options can show now
+    if (!m_strokeId) {
+        startStroke(mode, true);
+        return;
+    }
+
+    if (m_transaction.rootNodes().isEmpty()) return;
 
     if (m_currentArgs.continuedTransform()) {
         ToolTransformArgs::TransformMode savedMode = m_currentArgs.mode();
@@ -1301,12 +1422,16 @@ void KisToolTransform::slotResetTransform(ToolTransformArgs::TransformMode mode)
          * 2) Reset transform frame to infinity when the frame is unchanged
          */
 
-        const bool transformDiffers = !m_currentArgs.continuedTransform()->isSameMode(m_currentArgs);
+        const bool transformDiffers = m_currentArgs.mode() == ToolTransformArgs::LIQUIFY ?
+            !m_currentArgs.continuedTransform()->isSameLiquifyDeformation(m_currentArgs) :
+            !m_currentArgs.continuedTransform()->isSameMode(m_currentArgs);
 
         if (transformDiffers &&
             m_currentArgs.continuedTransform()->mode() == savedMode) {
 
+            const KisLiquifyProperties liquifyProperties = *m_currentArgs.liquifyProperties();
             m_currentArgs.restoreContinuedState();
+            *m_currentArgs.liquifyProperties() = liquifyProperties;
             initGuiAfterTransformMode();
             slotEditingFinished();
 
@@ -1317,9 +1442,17 @@ void KisToolTransform::slotResetTransform(ToolTransformArgs::TransformMode mode)
             KIS_ASSERT_RECOVER_NOOP(!m_currentArgs.continuedTransform());
         }
     } else {
+        // all the selected layers: the current mode may have left vector layers out
+        KisNodeList strokeNodes;
+        Q_FOREACH (KisNodeSP root, m_transaction.rootNodes()) {
+            KisLayerUtils::recursiveApplyNodes(root, [&strokeNodes] (KisNodeSP node) {
+                strokeNodes << node;
+            });
+        }
+
         if (!KisTransformUtils::shouldRestartStrokeOnModeChange(previousMode,
                                                                 m_currentArgs.mode(),
-                                                                m_transaction.transformedNodes())) {
+                                                                strokeNodes)) {
             initTransformMode(m_currentArgs.mode());
             slotEditingFinished();
 
@@ -1358,6 +1491,47 @@ void KisToolTransform::slotRestartAndContinueTransform()
     ToolTransformArgs savedArgs(m_currentArgs);
     endStroke();
     startStroke(savedArgs.mode(), false);
+}
+
+void KisToolTransform::slotLayerSelectionChanged()
+{
+    // one click in the layer docker changes the active layer and the selection
+    // one after the other, and the first ends the stroke: follow when both are done
+    QTimer::singleShot(0, this, SLOT(followLayerSelection()));
+}
+
+void KisToolTransform::followLayerSelection()
+{
+    if (!isActive()) return;
+
+    // every mode follows: the transform so far is applied to the old layers
+    const ToolTransformArgs::TransformMode mode =
+        m_strokeId && !m_transaction.rootNodes().isEmpty() ? m_currentArgs.mode() : m_lastStrokeMode;
+
+    KisNodeList nodes = selectedNodes();
+    KisLayerUtils::filterMergeableNodes(nodes, true);
+    if (nodes.isEmpty()) return;
+    // the selection hasn't caught up with a layer's removal yet
+    Q_FOREACH (KisNodeSP node, nodes) {
+        if (!node->graphListener()) return;
+    }
+    if (m_strokeId && KritaUtils::compareListsUnordered(nodes, m_strokeRootNodes)) return;
+
+    if (this->mode() != KisTool::HOVER_MODE) {
+        m_layerSelectionChangePending = true;
+        return;
+    }
+
+    if (m_strokeId) {
+        // what is done so far stays on its layers, as one undo step. The last
+        // Liquify dabs may still wait for a repaint of the canvas
+        if (mode == ToolTransformArgs::LIQUIFY && !m_transaction.rootNodes().isEmpty() &&
+            !m_currentArgs.isIdentity()) {
+            requestImageRecalculation();
+        }
+        endStroke();
+    }
+    startStroke(mode, false);
 }
 
 void KisToolTransform::slotEditingFinished()

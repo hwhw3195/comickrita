@@ -8,6 +8,9 @@
 #define __KIS_LIQUIFY_PAINT_HELPER_H
 
 #include <QScopedPointer>
+#include <QVector>
+
+#include "KisShapeLayerHooks.h"
 
 class KisLiquifyTransformWorker;
 class KisCoordinatesConverter;
@@ -23,7 +26,9 @@ public:
     ~KisLiquifyPaintHelper();
 
     void configurePaintOp(const KisLiquifyProperties &_props,
-                          KisLiquifyTransformWorker *worker);
+                          KisLiquifyTransformWorker *worker,
+                          QVector<KisShapeLayerHooks::LiquifyDab> *dabs = nullptr,
+                          bool moveGrid = true);
 
     void startPaint(KoPointerEvent *event, const KoCanvasResourceProvider *manager);
     void continuePaint(KoPointerEvent *event);

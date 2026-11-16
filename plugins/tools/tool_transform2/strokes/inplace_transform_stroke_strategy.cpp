@@ -9,6 +9,8 @@
 #include <QMutex>
 #include <QMutexLocker>
 #include <QElapsedTimer>
+#include <QThread>
+#include <cmath>
 #include "kundo2commandextradata.h"
 
 #include "kis_node_progress_proxy.h"
@@ -54,6 +56,10 @@
 #include "kis_filter_mask.h"
 #include "commands_new/KisDisableDirtyRequestsCommand.h"
 #include <kis_shape_layer.h>
+#include <KisShapeLayerHooks.h>
+#include "kis_vector_transform_pass.h"
+#include <kis_liquify_transform_worker.h>
+#include "kis_liquify_properties.h"
 #include "kis_raster_keyframe_channel.h"
 #include "kis_image_animation_interface.h"
 #include "KisAnimAutoKey.h"
@@ -70,14 +76,49 @@ struct InplaceTransformStrokeStrategy::Private
     bool forceReset;
     KisNodeList rootNodes;
     KisSelectionSP selection;
+    /// the vector layers a plugin moves itself (KisShapeLayerHooks)
+    KisVectorTransformPass vectors;
     KisPaintDeviceSP externalSource;
     KisNodeSP imageRoot;
     int currentTime = -1; // NOTE: initialized asynchronously in initStrokeCallback!
     int previewLevelOfDetail = -1;
     bool forceLodMode = true;
+    /// read in the GUI thread: KSharedConfig is per thread, and a worker's can be older
+    KisLiquifyProperties liquifyProperties;
 
     // properties filled by initialization/transformation routines
     KisNodeList processedNodes;
+    /**
+     * The incremental Liquify preview: a pass repaints only where the grid
+     * changed since the last pass, over the last pass's result, instead of
+     * undoing it and repainting everything. Only for paint layers (and the
+     * vector layers above), without a selection or an external source
+     * (KisVectorTransformPass::liquifyIncrementalAllowed()).
+     */
+    struct LiquifyPass {
+        bool incremental = false;
+        QRect changedRect;
+        /// where the pass's commands start in \ref commands
+        int commandsStart = 0;
+    };
+    /// per level of detail: the last pass's worker, and the current pass
+    QHash<int, QSharedPointer<KisLiquifyTransformWorker>> lastLiquifyWorkers;
+    QHash<int, LiquifyPass> liquifyPasses;
+    /**
+     * Per level of detail, a run of incremental passes keeps the commands of
+     * its last pass only, so the stroke's commands don't grow with its
+     * passes: where they start in \ref commands, or -1 when the last pass
+     * was a full one. Each pass starts with its disable-updates command.
+     */
+    QHash<int, int> liquifyRunPassStart;
+    /**
+     * Per level of detail, the paint layers a run of incremental passes
+     * repaints in bands, threads at once: one transaction each, from the
+     * run's first pass to its end (endLiquifyRun()). A transaction keeps a
+     * tile's original once, so it grows with the area touched, not with the
+     * passes. Only the barriers change it.
+     */
+    QHash<int, QHash<KisNode*, QSharedPointer<KisTransaction>>> liquifyTransactions;
     ToolTransformArgs initialTransformArgs;
     ToolTransformArgs currentTransformArgs;
 
@@ -164,6 +205,7 @@ InplaceTransformStrokeStrategy::InplaceTransformStrokeStrategy(ToolTransformArgs
     m_d->undoFacade = undoFacade;
     m_d->imageRoot = imageRoot;
     m_d->forceLodMode = forceLodMode;
+    m_d->liquifyProperties.loadAndResetMode();
     m_d->commandUpdatesBlockerCookie.reset(new boost::none_t(boost::none));
 
     if (selection) {
@@ -269,6 +311,9 @@ void InplaceTransformStrokeStrategy::doCanvasUpdate(bool forceUpdate)
 
 int InplaceTransformStrokeStrategy::calculatePreferredLevelOfDetail(const QRect &srcRect)
 {
+    // vector layers a plugin moves repaint at full resolution only
+    if (m_d->vectors.forcesFullResolution(m_d->initialTransformArgs.mode(), m_d->processedNodes)) return -1;
+
     KisLodPreferences lodPreferences = this->currentLodPreferences();
     if (!lodPreferences.lodSupported() ||
         !(lodPreferences.lodPreferred() || m_d->forceLodMode)) return -1;
@@ -409,6 +454,7 @@ void InplaceTransformStrokeStrategy::initStrokeCallback()
 
     // When placing an external source image, we never work recursively on any layer masks
     m_d->processedNodes = KisTransformUtils::fetchNodesList(m_d->mode, m_d->rootNodes, m_d->externalSource, m_d->selection);
+    m_d->vectors.init(m_d->mode, m_d->processedNodes, !!m_d->selection, !!m_d->externalSource);
 
     bool argsAreInitialized = false;
     QVector<KisStrokeJobData *> lastCommandUndoJobs;
@@ -446,6 +492,11 @@ void InplaceTransformStrokeStrategy::initStrokeCallback()
     });
 
     extraInitJobs << lastCommandUndoJobs;
+
+    // after the undo, as continuing a transform brings back the selection it started from
+    KritaUtils::addJobBarrier(extraInitJobs, [this]() {
+        m_d->vectors.setSelection(m_d->selection);
+    });
 
     if (!lastCommandUndoJobs.isEmpty()) {
         KritaUtils::addJobBarrier(extraInitJobs, [this]() {
@@ -574,6 +625,10 @@ void InplaceTransformStrokeStrategy::initStrokeCallback()
         TransformTransactionProperties transaction(srcRect, &m_d->initialTransformArgs, m_d->rootNodes, m_d->processedNodes);
         if (!argsAreInitialized) {
             m_d->initialTransformArgs = KisTransformUtils::resetArgsForMode(m_d->mode, m_d->filterId, transaction, m_d->externalSource);
+        }
+        // also when continuing a stroke: its brush settings may be older than the saved ones
+        if (m_d->initialTransformArgs.liquifyProperties()) {
+            *m_d->initialTransformArgs.liquifyProperties() = m_d->liquifyProperties;
         }
         m_d->externalSource.clear();
 
@@ -722,6 +777,8 @@ void InplaceTransformStrokeStrategy::undoAllCommands()
     m_d->commands.clear();
 }
 
+// [custom] A run of incremental Liquify passes indexes into m_d->commands
+// (liquifyRunPassStart): call endLiquifyRun() before this while a run may be open.
 void InplaceTransformStrokeStrategy::undoTransformCommands(int levelOfDetail)
 {
     for (auto it = std::make_reverse_iterator(m_d->commands.end());
@@ -771,6 +828,9 @@ void InplaceTransformStrokeStrategy::transformNode(KisNodeSP node, const ToolTra
     if (KisExternalLayer *extLayer =
         dynamic_cast<KisExternalLayer*>(node.data())) {
 
+            /// a vector layer whose shapes a plugin moves itself (Liquify, the deforming modes)
+            if (m_d->vectors.transformNode(node, config, vectorSink(node, commandGroup, levelOfDetail))) return;
+
             if (config.mode() == ToolTransformArgs::FREE_TRANSFORM ||
                     (config.mode() == ToolTransformArgs::PERSPECTIVE_4POINT &&
                      extLayer->supportsPerspectiveTransform())) {
@@ -780,9 +840,8 @@ void InplaceTransformStrokeStrategy::transformNode(KisNodeSP node, const ToolTra
 
                     KisTransformWorker w = KisTransformUtils::createTransformWorker(config, 0, 0);
                     QTransform t = w.transform();
-                    KUndo2Command *cmd = extLayer->transform(t);
 
-                    executeAndAddCommand(cmd, Transform, KisStrokeJobData::CONCURRENT);
+                    m_d->vectors.freeTransform(extLayer, config, t, vectorSink(node, Transform, 0));
 
                     /// we should make sure that the asynchronous shape regeneration
                     /// has completed before we issue the updates a bit later
@@ -870,6 +929,82 @@ void InplaceTransformStrokeStrategy::transformNode(KisNodeSP node, const ToolTra
     }
 }
 
+namespace {
+/**
+ * Band \p band of \p bands of \p rect: whole tile rows of \p device,
+ * shared out evenly, so no two bands touch the same tile. Empty when there
+ * are fewer rows than bands.
+ */
+QRect liquifyBand(const QRect &rect, int band, int bands, KisPaintDeviceSP device)
+{
+    const int tile = 64;
+    const int originY = device->y();
+    auto row = [&] (int y) { return int(std::floor(qreal(y - originY) / tile)); };
+    const int firstRow = row(rect.top());
+    const int rows = row(rect.bottom()) - firstRow + 1;
+    const int from = firstRow + rows * band / bands;
+    const int to = firstRow + rows * (band + 1) / bands;
+    if (from >= to) return QRect();
+    return rect & QRect(rect.left(), originY + from * tile, rect.width(), (to - from) * tile);
+}
+}
+
+void InplaceTransformStrokeStrategy::transformLiquifyBand(KisNodeSP node, const ToolTransformArgs &config, int levelOfDetail, int band, int bands)
+{
+    const Private::LiquifyPass pass = m_d->liquifyPasses.value(levelOfDetail);
+    if (!pass.incremental) {
+        // the full path, once
+        if (band == 0) transformNode(node, config, levelOfDetail);
+        return;
+    }
+    if (pass.changedRect.isEmpty()) return;
+
+    /// the incremental Liquify preview: repaint this band of where the grid
+    /// changed, over the last pass's result, which stays, in the run's
+    /// transaction (endLiquifyRun() ends it)
+    KisPaintDeviceSP device = node->paintDevice();
+    KisPaintDeviceSP cachedPortion;
+    {
+        QMutexLocker l(&m_d->devicesCacheMutex);
+        cachedPortion = m_d->devicesCacheHash.value(device.data());
+    }
+    KIS_SAFE_ASSERT_RECOVER_RETURN(cachedPortion);
+
+    const QRect rect = liquifyBand(pass.changedRect, band, bands, device);
+    if (rect.isEmpty()) return;
+    config.liquifyWorker()->runInRect(cachedPortion, device, rect);
+}
+
+void InplaceTransformStrokeStrategy::endLiquifyRun(int levelOfDetail)
+{
+    QMutexLocker l(&m_d->commandsMutex);
+    const int passStart = m_d->liquifyRunPassStart.value(levelOfDetail, -1);
+    m_d->liquifyRunPassStart.remove(levelOfDetail);
+
+    QHash<KisNode*, QSharedPointer<KisTransaction>> transactions;
+    transactions.swap(m_d->liquifyTransactions[levelOfDetail]);
+    if (transactions.isEmpty()) return;
+
+    // inside the last pass's disabled updates, where a pass's own
+    // transaction went: its update command, later, refreshes the canvas
+    const CommandGroup group = levelOfDetail > 0 ? TransformLod : Transform;
+    int at = passStart >= 0 ? qMin(passStart + 1, m_d->commands.size()) : m_d->commands.size();
+    for (auto it = transactions.begin(); it != transactions.end(); ++it) {
+        KUndo2CommandSP command = toQShared(it.value()->endAndTake());
+        // done already: a transaction's first redo does nothing
+        executeCommand(command, false);
+        m_d->commands.insert(at++, {group, command, KisStrokeJobData::BARRIER});
+    }
+}
+
+void InplaceTransformStrokeStrategy::endLiquifyRuns()
+{
+    Q_FOREACH (int levelOfDetail, m_d->liquifyTransactions.keys()) {
+        endLiquifyRun(levelOfDetail);
+    }
+    m_d->liquifyRunPassStart.clear();
+}
+
 void InplaceTransformStrokeStrategy::createCacheAndClearNode(KisNodeSP node)
 {
     KisPaintDeviceSP device;
@@ -945,6 +1080,39 @@ void InplaceTransformStrokeStrategy::createCacheAndClearNode(KisNodeSP node)
     }
 }
 
+KUndo2Command *InplaceTransformStrokeStrategy::disableDirtyRequestsCommand(KisCommandUtils::FlipFlopCommand::State state)
+{
+    return m_d->vectors.disableDirtyRequestsCommand(m_d->updatesFacade, state);
+}
+
+KisVectorTransformPass::Sink InplaceTransformStrokeStrategy::vectorSink(KisNodeSP node, CommandGroup group, int levelOfDetail)
+{
+    KisVectorTransformPass::Sink sink;
+    sink.execute = [this, group] (KUndo2Command *command) {
+        executeAndAddCommand(command, group, KisStrokeJobData::CONCURRENT);
+    };
+    sink.addDirtyRect = [this, node, levelOfDetail] (const QRect &rect) {
+        QRect dirtyRect = rect;
+        if (levelOfDetail > 0) {
+            dirtyRect = KisLodTransform::scaledRect(KisLodTransform::alignedRect(dirtyRect, levelOfDetail), levelOfDetail);
+        }
+        addDirtyRect(node, dirtyRect, levelOfDetail);
+    };
+    return sink;
+}
+
+void InplaceTransformStrokeStrategy::setVectorFastPreview(bool fast)
+{
+    m_d->vectors.setFastPreview(fast);
+}
+
+bool InplaceTransformStrokeStrategy::isLiquifyBandNode(KisNodeSP node, const ToolTransformArgs &args) const
+{
+    // the incremental preview takes paint layers only (initStrokeCallback())
+    return m_d->vectors.liquifyIncrementalAllowed() && args.mode() == ToolTransformArgs::LIQUIFY &&
+        args.liquifyWorker() && !args.externalSource() && node->inherits("KisPaintLayer");
+}
+
 void InplaceTransformStrokeStrategy::reapplyTransform(ToolTransformArgs args,
                                                       QVector<KisStrokeJobData *> &mutatedJobs,
                                                       int levelOfDetail,
@@ -959,20 +1127,71 @@ void InplaceTransformStrokeStrategy::reapplyTransform(ToolTransformArgs args,
     CommandGroup commandGroup =
         levelOfDetail > 0 ? TransformLod : Transform;
 
-    KritaUtils::addJobBarrier(mutatedJobs, levelOfDetail,
-                              [this, args, levelOfDetail, updateData, useHoldUI, commandGroup]() {
+    /**
+     * A copy of the args copies the Liquify worker, its grid and quadtrees
+     * (about 1 ms for a large layer): the first barrier and the bands of the
+     * first paint layer share one, and each other paint layer's bands one
+     */
+    const QSharedPointer<const ToolTransformArgs> passArgs = toQShared(new ToolTransformArgs(args));
 
+    KritaUtils::addJobBarrier(mutatedJobs, levelOfDetail,
+                              [this, passArgs, levelOfDetail, updateData, useHoldUI, commandGroup]() {
+        const ToolTransformArgs &args = *passArgs;
+
+        Private::LiquifyPass pass;
+        if (m_d->vectors.liquifyIncrementalAllowed() && args.mode() == ToolTransformArgs::LIQUIFY &&
+            args.liquifyWorker() && !args.externalSource()) {
+
+            QSharedPointer<KisLiquifyTransformWorker> last = m_d->lastLiquifyWorkers.value(levelOfDetail);
+            pass.incremental = !useHoldUI && last && args.liquifyWorker()->changedRect(*last, &pass.changedRect);
+            m_d->lastLiquifyWorkers.insert(levelOfDetail, toQShared(new KisLiquifyTransformWorker(*args.liquifyWorker())));
+        }
         // it has its own dirty requests blocking inside
-        undoTransformCommands(levelOfDetail);
+        if (!pass.incremental) {
+            // the incremental passes' pixels go into the commands, to be undone with them
+            endLiquifyRun(levelOfDetail);
+            undoTransformCommands(levelOfDetail);
+        }
+
+        {
+            QMutexLocker l(&m_d->commandsMutex);
+            pass.commandsStart = m_d->commands.size();
+        }
+        m_d->liquifyPasses.insert(levelOfDetail, pass);
+
+        // the paint layers the pass repaints in bands, in the run's transactions
+        QHash<KisNode*, QSharedPointer<KisTransaction>> &transactions = m_d->liquifyTransactions[levelOfDetail];
+        if (pass.incremental && !pass.changedRect.isEmpty()) {
+            Q_FOREACH (KisNodeSP node, m_d->processedNodes) {
+                if (isLiquifyBandNode(node, args) && !transactions.contains(node.data())) {
+                    transactions.insert(node.data(), toQShared(new KisTransaction(node->paintDevice())));
+                }
+            }
+        }
 
         if (useHoldUI) {
             executeAndAddCommand(new KisHoldUIUpdatesCommand(m_d->updatesFacade, KisCommandUtils::FlipFlopCommand::INITIALIZING), commandGroup, KisStrokeJobData::BARRIER);
         }
 
-        executeAndAddCommand(new KisDisableDirtyRequestsCommand(m_d->updatesFacade, KisUpdateCommandEx::INITIALIZING), commandGroup, KisStrokeJobData::BARRIER);
+        executeAndAddCommand(disableDirtyRequestsCommand(KisUpdateCommandEx::INITIALIZING), commandGroup, KisStrokeJobData::BARRIER);
     });
 
+    // the paint layers of the incremental Liquify preview: in bands, threads at once
+    const int bands = qMax(1, QThread::idealThreadCount());
+    bool passArgsTaken = false;
     Q_FOREACH (KisNodeSP node, m_d->processedNodes) {
+        if (isLiquifyBandNode(node, args)) {
+            const QSharedPointer<const ToolTransformArgs> nodeArgs =
+                passArgsTaken ? toQShared(new ToolTransformArgs(args)) : passArgs;
+            passArgsTaken = true;
+            for (int band = 0; band < bands; band++) {
+                KritaUtils::addJobConcurrent(mutatedJobs, levelOfDetail,
+                                             [this, node, nodeArgs, levelOfDetail, band, bands]() {
+                    transformLiquifyBand(node, *nodeArgs, levelOfDetail, band, bands);
+                });
+            }
+            continue;
+        }
         KritaUtils::addJobConcurrent(mutatedJobs, levelOfDetail,
                                      [this, node, args, levelOfDetail]() {
             transformNode(node, args, levelOfDetail);
@@ -982,9 +1201,36 @@ void InplaceTransformStrokeStrategy::reapplyTransform(ToolTransformArgs args,
     KritaUtils::addJobBarrier(mutatedJobs, levelOfDetail,
                               [this, levelOfDetail, updateData, useHoldUI, commandGroup]() {
 
+        // the bands are painted, in the run's transactions (endLiquifyRun())
+        const Private::LiquifyPass pass = m_d->liquifyPasses.value(levelOfDetail);
+        if (pass.incremental && !pass.changedRect.isEmpty()) {
+            const QHash<KisNode*, QSharedPointer<KisTransaction>> &transactions = m_d->liquifyTransactions[levelOfDetail];
+            for (auto it = transactions.constBegin(); it != transactions.constEnd(); ++it) {
+                addDirtyRect(it.key(), pass.changedRect, levelOfDetail);
+            }
+        }
+        // a run keeps its last pass's commands only: the one before is
+        // redone already, and its undo would only refresh the canvas
+        // (the moved shapes' commands undo nothing while the stroke runs)
+        if (pass.incremental) {
+            QMutexLocker l(&m_d->commandsMutex);
+            int start = pass.commandsStart;
+            const int previous = m_d->liquifyRunPassStart.value(levelOfDetail, -1);
+            if (previous >= 0 && previous < start && start <= m_d->commands.size()) {
+                for (int i = start - 1; i >= previous; i--) {
+                    if (m_d->commands[i].commandGroup != commandGroup) continue;
+                    m_d->commands.remove(i);
+                    start--;
+                }
+            }
+            m_d->liquifyRunPassStart.insert(levelOfDetail, start);
+        } else {
+            m_d->liquifyRunPassStart.remove(levelOfDetail);
+        }
+
         fetchAllUpdateRequests(levelOfDetail, updateData);
 
-        executeAndAddCommand(new KisDisableDirtyRequestsCommand(m_d->updatesFacade, KisUpdateCommandEx::FINALIZING), commandGroup, KisStrokeJobData::BARRIER);
+        executeAndAddCommand(disableDirtyRequestsCommand(KisUpdateCommandEx::FINALIZING), commandGroup, KisStrokeJobData::BARRIER);
         executeAndAddCommand(new KisUpdateCommandEx(m_d->updateDataForUndo, m_d->updatesFacade, KisUpdateCommandEx::FINALIZING, m_d->commandUpdatesBlockerCookie), commandGroup, KisStrokeJobData::BARRIER);
 
         if (useHoldUI) {
@@ -1015,6 +1261,9 @@ void InplaceTransformStrokeStrategy::reapplyTransform(ToolTransformArgs args,
 void InplaceTransformStrokeStrategy::finalizeStrokeImpl(QVector<KisStrokeJobData *> &mutatedJobs, bool saveCommands)
 {
     KritaUtils::addJobBarrier(mutatedJobs, [this]() {
+        // the incremental Liquify passes' pixels: one command per paint layer
+        endLiquifyRuns();
+
         Q_FOREACH (KisSelectionSP selection, m_d->deactivatedSelections) {
             selection->setVisible(true);
         }
@@ -1027,6 +1276,10 @@ void InplaceTransformStrokeStrategy::finalizeStrokeImpl(QVector<KisStrokeJobData
         m_d->commandUpdatesBlockerCookie.reset();
     });
 
+    // the end of the vector layers' moves: the last commands hold them, or they go back
+    KritaUtils::addJobBarrier(mutatedJobs, [this, saveCommands]() {
+        m_d->vectors.finish(saveCommands);
+    });
 
     if (saveCommands) {
         KritaUtils::addJobBarrier(mutatedJobs, [this]() {
@@ -1155,6 +1408,11 @@ void InplaceTransformStrokeStrategy::cancelAction(QVector<KisStrokeJobData *> &m
 
         KritaUtils::addJobBarrier(mutatedJobs, [this]() {
             m_d->commandUpdatesBlockerCookie.reset();
+            // the incremental Liquify passes' pixels, to be undone with the rest
+            endLiquifyRuns();
+            // the vector layers go back first: undoing all brings back what an
+            // earlier, continued stroke did, and that must stay
+            m_d->vectors.finish(false);
             undoTransformCommands(0);
             undoAllCommands();
         });
