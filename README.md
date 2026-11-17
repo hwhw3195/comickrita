@@ -81,5 +81,6 @@ Inspired by the approaches used in the following:
 * [Blender Grease Pencil module (GPL-3.0)](https://projects.blender.org/blender/blender)
 * [NijiGPen Grease Pencil Addon (GPL-3.0)](https://github.com/chsh2/nijiGPen)
 * [CSP Brush extract (AGPL-3.0)](https://github.com/MorrowShore/CSPBrushExtract/tree/main)
+* Ribbon brush Design by [SirPigeonz](https://krita-artists.org/t/ribbon-brush/31346/27?u=hwhw) 
 
 And of course, many thanks to the Krita team!
