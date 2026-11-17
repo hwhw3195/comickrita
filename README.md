@@ -33,7 +33,8 @@ Video Demo:
 * Limitations:
 	* Only works with pixel and CSP brush engines.
 	* Color mixing does not work on vector layers.
-	* Does not support fills (stroke and fill will be the same color) or gradients. Caps also won't really show up visually. 
+	* Does not support fills (stroke and fill will be the same color) or gradients. Caps also won't show up visually.
+ 	* There is only one liquify mode currently implemented (Move) for vectors. Behavior was tested using Move tool on Build-up mode, Amount and Spacing set to 0.01.
 
 
 ## CSP Paintop (including Ribbon Function)
