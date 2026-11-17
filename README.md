@@ -1,6 +1,6 @@
 This is a custom build of Krita that adds many features from Clip Studio Paint (CSP) that are useful for comics! I built this for my own personal use and it will be maintained for as long as I use it. This project and I are not affiliated with the official Krita development team at all.
 
-Please do **not** report problems with comicKrita to Krita's bug tracker; report them to this repository.
+Please do **not** report problems with comicKrita to Krita's bug tracker; report them to this repository. Uses the Issues tab for bugs and Discussions for questions!
 
 ## Overview
 This custom build adds the following:
